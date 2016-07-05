@@ -94,9 +94,14 @@ int file_pop(char *filename, char **buffer) {
     }
 
     //getting the file size
-    fseek(fd, 0L, SEEK_END);
-    size = ftell(fd);
-    fseek(fd, 0L, SEEK_SET);
+    if (strcmp(filename, "/dev/stdin")) {
+        fseek(fd, 0L, SEEK_END);
+        size = ftell(fd);
+        fseek(fd, 0L, SEEK_SET);
+    } else {
+    //we need a constant size for a stdin buffer because fseek isn't possible
+        size = 1024 * 1024;
+    }
 
     *buffer = malloc(size);
     if (!(*buffer)) {
