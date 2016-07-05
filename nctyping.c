@@ -9,6 +9,9 @@
  *         stdin not working from pipe                  *
  *         time() is nonmonotonic and inaccurate        *
  *         should recognize and skip code comments      *
+ *         bug when character 80 is a newline           *
+ *         tab characters are being treated as spaces   *
+ *         wrapped lines are displayed and stored wrong *
  ********************************************************
  */
 
@@ -113,6 +116,10 @@ int file_pop(char *filename, char **buffer) {
         sub = fgetc(fd);
         if (sub == '\n' || (sub > 31 && sub < 127)) {
             (*buffer)[i] = sub;
+            i++;
+        //tabs are treated as spaces for simplicity
+        } else if (sub == '\t') {
+            (*buffer)[i] = ' ';
             i++;
         }
     }
@@ -233,7 +240,7 @@ int typing(const char *buffer, int size, int begin, int height, int width,
                 //backspace over leading whitespaces
                 j = i;
                 xt = x - 1;
-                while (xt >= 1 && buffer[j] == ' ') {
+                while (xt >= 1 && (buffer[j] == ' ')) {
                     j--;
                     xt--;
                 }
