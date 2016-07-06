@@ -12,6 +12,7 @@
  *         bug when character 80 is a newline           *
  *         tab characters are being treated as spaces   *
  *         wrapped lines are displayed and stored wrong *
+ *         not recognizing mid comment after pause      *
  ********************************************************
  */
 
@@ -22,12 +23,80 @@
 #include <string.h>
 #include <stdlib.h>
 
+//Can be used with bitwise operators to assign a mask to each file extension
+enum CommentMask {
+    DOUBLESLASHINLINE = 1,
+    SINGLEHASHINLINE = 2,
+    SLASHSTARBLOCK = 256
+};
+
+//struct for storing comment syntax for each file
+struct comment {
+    char *ext;
+    unsigned short int syntax;
+    int comment_len;
+};
+
 //structure for returning results of each "typing"
 struct scoring {
     int right;
     int wrong;
     int time;
 };
+
+void commentLength(const char *buffer, int i, struct comment *co) {
+    char* pos;
+    if (co->syntax & DOUBLESLASHINLINE) {
+        if (!strncmp(buffer + i, "//", 2)) {
+            //This is the start of an inline comment
+            pos = strchr((buffer + i), '\n');
+            if (pos) {
+                co->comment_len = (pos + 1) - (buffer + i);
+            }
+        }
+    }
+    if (co->syntax & SINGLEHASHINLINE) {
+        if (buffer[i] == '#') {
+            pos = strchr((buffer + i), '\n');
+            if (pos) {
+                co->comment_len = (pos + 1) - (buffer + i);
+            }
+        }
+    }
+    if (co->syntax & SLASHSTARBLOCK) {
+        if (!strncmp(buffer + i, "/*", 2)) {
+            pos = strstr(buffer + i, "*/");
+            if (pos) {
+                co->comment_len = (pos + 2) - (buffer + i);
+            }
+        }
+    }
+}
+
+//populates the comment structure
+void commentType(char *filename, struct comment *co) {
+    char *ext = filename + strlen(filename) - 1;
+
+    co->comment_len = 0;
+
+    while (ext > filename && *ext != '/') ext--;
+    while (*ext != '.' && *ext) ext++;
+
+    if (*ext == '.') ext++;
+    co->ext = ext;
+
+    /* Syntax mask so far:
+     * 0-bit = // inline
+     * 1-bit = # inline
+     * 8-bit = / * to * / block (without spaces)
+     */
+    if (!strcmp(ext, "c") || !strcmp(ext, "h") || !strcmp(ext, "cc") ||
+        !strcmp(ext, "cpp") || !strcmp(ext, "cxx") || !strcmp(ext, "hpp")) {
+        co->syntax = DOUBLESLASHINLINE | SLASHSTARBLOCK;
+    } else {
+        co->syntax = 0;
+    }
+}
 
 //returns the distance from one newline to the next on the previous line
 //buffer[i] should be a newline character
@@ -140,7 +209,7 @@ int file_pop(char *filename, char **buffer) {
 //score: structure that is used to return typing stats (right, wrong, time)
 //RETURNS: how much of the buffer was completed before moving to next screen
 int typing(const char *buffer, int size, int begin, int height, int width,
-           char* filename, struct scoring *score) {
+           char* filename, struct scoring *score, struct comment *co) {
     //start is when first key is typed, last is time() of last correct keystroke
     time_t start, last;
     bool isStarted = false;
@@ -174,14 +243,22 @@ int typing(const char *buffer, int size, int begin, int height, int width,
     init_pair(5, COLOR_GREEN, COLOR_BLACK); //medium match
     init_pair(6, COLOR_YELLOW, COLOR_BLACK);//slow match
     init_pair(7, COLOR_BLACK, COLOR_WHITE); //newline char
+    init_pair(8, COLOR_BLUE, COLOR_BLACK);  //commmented code
 
     x = 1;
     y = 0;
 
     //Draw start of buffer
-    attron(COLOR_PAIR(1));
+    attron(COLOR_PAIR(co->comment_len ? 8 : 1));
     i = begin;
     while (i < size && y < height - 3) {
+        if (!co->comment_len) {
+            commentLength(buffer, i, co);
+            if (co->comment_len) {
+                attroff(COLOR_PAIR(1));
+                attron(COLOR_PAIR(8));
+            }
+        }
         if (buffer[i] == '\n' || x >= width) {
             x = 1;
             y++;
@@ -193,9 +270,14 @@ int typing(const char *buffer, int size, int begin, int height, int width,
             move(y, x);
         }
         i++;
+        if (co->comment_len == 1) {
+            attroff(COLOR_PAIR(8));
+            attron(COLOR_PAIR(1));
+        }
+        if (co->comment_len) co->comment_len--;
     }
     used = i;
-    attroff(COLOR_PAIR(1));
+    attroff(COLOR_PAIR(co->comment_len ? 8 : 1));
 
     //draw bottom border
     y = height - 2;
@@ -435,6 +517,7 @@ void results(struct scoring *score, bool more, int height, int width) {
 //Just a wrapper function for handling splitting the buffer up into screens
 void running(int argc, char **argv) {
     struct winsize w;
+    struct comment co;
     struct scoring score;
     char *buffer;
     char filename[255];
@@ -452,13 +535,15 @@ void running(int argc, char **argv) {
             strcpy(filename, argv[i]);
         }
 
+        commentType(filename, &co);
+
         ioctl(0,TIOCGWINSZ,&w);
-        int res = typing(buffer, size, 0, w.ws_row, w.ws_col, filename, &score);
+        int res = typing(buffer, size, 0, w.ws_row, w.ws_col, filename, &score, &co);
         while (res < size - 1) {
             ioctl(0,TIOCGWINSZ,&w);
             results(&score, true, w.ws_row, w.ws_col);
             ioctl(0,TIOCGWINSZ,&w);
-            res = typing(buffer, size, res, w.ws_row, w.ws_col, filename, &score);
+            res = typing(buffer, size, res, w.ws_row, w.ws_col, filename, &score, &co);
         }
         results(&score, i != argc - 1, w.ws_row, w.ws_col);
         free(buffer);
