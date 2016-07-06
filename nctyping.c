@@ -13,6 +13,10 @@
  *         tab characters are being treated as spaces   *
  *         wrapped lines are displayed and stored wrong *
  *         not recognizing mid comment after pause      *
+ *         ^^ NOTE: this will not be important since    *
+ *                  once comment detection during the   *
+ *                  typing phase is implemented, it will*
+ *                  be impossible to stop mid-comment   *
  ********************************************************
  */
 
@@ -22,6 +26,17 @@
 #include <time.h>
 #include <string.h>
 #include <stdlib.h>
+
+
+//these flags are used as a mask in *flags to monitor buffer states
+enum flags {
+    TYPED = 1,
+    COMMENT = 2,
+    ERROR = 4,
+    MISTAKE1 = 8,
+    MISTAKE2 = 16,
+    NEWLINE = 32
+};
 
 //Can be used with bitwise operators to assign a mask to each file extension
 enum CommentMask {
@@ -74,7 +89,8 @@ void commentLength(const char *buffer, int i, struct comment *co) {
 }
 
 //populates the comment structure
-void commentType(char *filename, struct comment *co) {
+//buffer needs to be passed in to look for "#!/bin/bash",etc. at the top
+void commentType(char *filename, char* buffer, struct comment *co) {
     char *ext = filename + strlen(filename) - 1;
 
     co->comment_len = 0;
@@ -98,6 +114,11 @@ void commentType(char *filename, struct comment *co) {
     }
 }
 
+void markComments(char *filename, char *buffer, char *flags, int size,
+                  struct comment *co) {
+    commentType(filename, buffer, co);
+}
+
 //returns the distance from one newline to the next on the previous line
 //buffer[i] should be a newline character
 //RETURN + 1 can be used as the x coordinate for buffer[i]
@@ -113,8 +134,6 @@ int previousLineLength(int i, int width, int begin, const char *buffer) {
         return (i - k) % width;
     }
 }
-
-
 
 //fills the screen with the char filler
 //could also be used to draw rectangles if we add two more arguments
@@ -143,18 +162,8 @@ int colortiming(int diff) {
     }
 }
 
-//if terminal allows changing colors, we redefine them here
-void change_colors() {
-    init_color(COLOR_WHITE, 1000, 1000, 1000);
-    init_color(COLOR_BLACK, 0, 0, 0);
-    init_color(COLOR_RED, 1000, 0, 0);
-    init_color(COLOR_GREEN, 0, 1000, 0);
-    init_color(COLOR_YELLOW, 1000, 1000, 0);
-    init_color(COLOR_CYAN, 0, 1000, 1000);
-}
-
 //reads typeable content from a file and populates the buffer for typing()
-int file_pop(char *filename, char **buffer) {
+int file_pop(char *filename, char **buffer, char **flags) {
     FILE *fd;
     int i = 0;
     char sub;
@@ -176,14 +185,18 @@ int file_pop(char *filename, char **buffer) {
     }
 
     *buffer = malloc(size);
-    if (!(*buffer)) {
+    *flags = malloc(size);
+    if (!(*buffer) || !(*flags)) {
         perror("Error allocating memory for file buffer");
         return i;
     }
 
+    memset(*flags, 0, size);
+
     while (!feof(fd) && i < size) {
         sub = fgetc(fd);
         if (sub == '\n' || (sub > 31 && sub < 127)) {
+            if (sub == '\n') (*flags)[i] |= NEWLINE;
             (*buffer)[i] = sub;
             i++;
         //tabs are treated as spaces for simplicity
@@ -202,13 +215,14 @@ int file_pop(char *filename, char **buffer) {
 //collects results as the user types along with it
 //
 //buffer: a single string of the entire file
+//flags: a string of flags corresponding to the chars at that index in buffer
 //size: size of buffer string
 //begin: where to start typing in buffer
 //height, width: useable screen dimensional
 //filename: a string containing the name of the file in buffer
 //score: structure that is used to return typing stats (right, wrong, time)
 //RETURNS: how much of the buffer was completed before moving to next screen
-int typing(const char *buffer, int size, int begin, int height, int width,
+int typing(const char *buffer, char *flags, int size, int begin, int height, int width,
            char* filename, struct scoring *score, struct comment *co) {
     //start is when first key is typed, last is time() of last correct keystroke
     time_t start, last;
@@ -233,9 +247,6 @@ int typing(const char *buffer, int size, int begin, int height, int width,
 
     //Initializing color schemes
     start_color();
-    if (can_change_color()) {
-        change_colors();
-    }
     init_pair(1, COLOR_WHITE, COLOR_BLACK); //to be typed
     init_pair(2, COLOR_BLACK, COLOR_MAGENTA);  //typing cursor
     init_pair(3, COLOR_BLACK, COLOR_RED);   //mistake hilight
@@ -519,7 +530,7 @@ void running(int argc, char **argv) {
     struct winsize w;
     struct comment co;
     struct scoring score;
-    char *buffer;
+    char *buffer, *flags;
     char filename[255];
     int size;
     int i = 0;
@@ -528,22 +539,22 @@ void running(int argc, char **argv) {
     for (i = 1; i < argc; i++) {
         //check if first arg was '-s'
         if (!strcmp(argv[i], "-s")) {
-            size = file_pop("/dev/stdin", &buffer);
+            size = file_pop("/dev/stdin", &buffer, &flags);
             strcpy(filename, "stdin");
         } else {
-            size = file_pop(argv[i], &buffer);
+            size = file_pop(argv[i], &buffer, &flags);
             strcpy(filename, argv[i]);
         }
 
-        commentType(filename, &co);
+        markComments(filename, buffer, flags, size, &co);
 
         ioctl(0,TIOCGWINSZ,&w);
-        int res = typing(buffer, size, 0, w.ws_row, w.ws_col, filename, &score, &co);
+        int res = typing(buffer, flags, size, 0, w.ws_row, w.ws_col, filename, &score, &co);
         while (res < size - 1) {
             ioctl(0,TIOCGWINSZ,&w);
             results(&score, true, w.ws_row, w.ws_col);
             ioctl(0,TIOCGWINSZ,&w);
-            res = typing(buffer, size, res, w.ws_row, w.ws_col, filename, &score, &co);
+            res = typing(buffer, flags, size, res, w.ws_row, w.ws_col, filename, &score, &co);
         }
         results(&score, i != argc - 1, w.ws_row, w.ws_col);
         free(buffer);
