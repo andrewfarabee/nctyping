@@ -49,7 +49,6 @@ enum CommentMask {
 struct comment {
     char *ext;
     unsigned short int syntax;
-    int comment_len;
 };
 
 //structure for returning results of each "typing"
@@ -59,32 +58,42 @@ struct scoring {
     int time;
 };
 
-void commentLength(const char *buffer, int i, struct comment *co) {
+void commentParsing(const char *buffer, char *flags, int size, struct comment *co) {
     char* pos;
-    if (co->syntax & DOUBLESLASHINLINE) {
-        if (!strncmp(buffer + i, "//", 2)) {
-            //This is the start of an inline comment
-            pos = strchr((buffer + i), '\n');
-            if (pos) {
-                co->comment_len = (pos + 1) - (buffer + i);
+    int i;
+    int comment_len = 0;
+    for (i = 0; i < size; i++) {
+        if (co->syntax & DOUBLESLASHINLINE && !comment_len) {
+            if (!strncmp(buffer + i, "//", 2)) {
+                //This is the start of an inline comment
+                pos = strchr((buffer + i), '\n');
+                if (pos) {
+                    comment_len = (pos + 1) - (buffer + i);
+                }
             }
         }
-    }
-    if (co->syntax & SINGLEHASHINLINE) {
-        if (buffer[i] == '#') {
-            pos = strchr((buffer + i), '\n');
-            if (pos) {
-                co->comment_len = (pos + 1) - (buffer + i);
+        if (co->syntax & SINGLEHASHINLINE && !comment_len) {
+            if (buffer[i] == '#') {
+                pos = strchr((buffer + i), '\n');
+                if (pos) {
+                    comment_len = (pos + 1) - (buffer + i);
+                }
             }
         }
-    }
-    if (co->syntax & SLASHSTARBLOCK) {
-        if (!strncmp(buffer + i, "/*", 2)) {
-            pos = strstr(buffer + i, "*/");
-            if (pos) {
-                co->comment_len = (pos + 2) - (buffer + i);
+        if (co->syntax & SLASHSTARBLOCK && !comment_len) {
+            if (!strncmp(buffer + i, "/*", 2)) {
+                pos = strstr(buffer + i, "*/");
+                if (pos) {
+                    comment_len = (pos + 2) - (buffer + i);
+                }
             }
         }
+        if (comment_len) {
+            flags[i] |= COMMENT;
+            comment_len--;
+        }
+        if (buffer[i] == '\n')
+            flags[i] |= NEWLINE;
     }
 }
 
@@ -93,7 +102,6 @@ void commentLength(const char *buffer, int i, struct comment *co) {
 void commentType(char *filename, char* buffer, struct comment *co) {
     char *ext = filename + strlen(filename) - 1;
 
-    co->comment_len = 0;
 
     while (ext > filename && *ext != '/') ext--;
     while (*ext != '.' && *ext) ext++;
@@ -117,6 +125,7 @@ void commentType(char *filename, char* buffer, struct comment *co) {
 void markComments(char *filename, char *buffer, char *flags, int size,
                   struct comment *co) {
     commentType(filename, buffer, co);
+    commentParsing(buffer, flags, size, co);
 }
 
 //returns the distance from one newline to the next on the previous line
@@ -260,15 +269,12 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
     y = 0;
 
     //Draw start of buffer
-    attron(COLOR_PAIR(co->comment_len ? 8 : 1));
+    attron(COLOR_PAIR(1));
     i = begin;
     while (i < size && y < height - 3) {
-        if (!co->comment_len) {
-            commentLength(buffer, i, co);
-            if (co->comment_len) {
-                attroff(COLOR_PAIR(1));
-                attron(COLOR_PAIR(8));
-            }
+        if (flags[i] & COMMENT) {
+            attroff(COLOR_PAIR(1));
+            attron(COLOR_PAIR(8));
         }
         if (buffer[i] == '\n' || x >= width) {
             x = 1;
@@ -280,15 +286,14 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
         } else {
             move(y, x);
         }
-        i++;
-        if (co->comment_len == 1) {
+        if (buffer[i] & COMMENT) {
             attroff(COLOR_PAIR(8));
             attron(COLOR_PAIR(1));
         }
-        if (co->comment_len) co->comment_len--;
+        i++;
     }
     used = i;
-    attroff(COLOR_PAIR(co->comment_len ? 8 : 1));
+    attroff(COLOR_PAIR(1));
 
     //draw bottom border
     y = height - 2;
