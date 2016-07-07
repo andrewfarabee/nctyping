@@ -12,7 +12,8 @@
  *         bug when character 80 is a newline           *
  *         tab characters are being treated as spaces   *
  *         wrapped lines are displayed and stored wrong *
- *         can't backspace past a comment               *
+ *         off-by-one: backspace comment skipping (line)*
+ *         get rid of comment struct and just use syntax*
  ********************************************************
  */
 
@@ -54,82 +55,56 @@ struct scoring {
     int time;
 };
 
+int commentLength(const char *buffer, int *i, struct comment *co,
+                  const char *open, const char *close) {
+    int comment_len = 0;
+    char *pos;
+    if (!strncmp(buffer + (*i), open, strlen(open))) {
+        //This is the start of an inline comment
+        pos = strstr((buffer + (*i)), close);
+        if (pos) {
+            comment_len = (pos + strlen(close)) - (buffer + (*i));
+        }
+        //get rid of whitespace after comment
+        comment_len += strspn(buffer + (*i) + comment_len, " \t\n");
+        //get rid of whitespace before comment
+        while (buffer[(*i) - 1] == ' ' || buffer[(*i) - 1] == '\n') {
+            (*i)--;
+            comment_len++;
+        }
+        if (buffer[*i] == '\n') {
+            comment_len--;
+            (*i)++;
+        }
+    }
+    return comment_len;
+}
+
 void commentParsing(const char *buffer, char *flags, int size, struct comment *co) {
     char* pos;
     int i;
     int comment_len = 0;
     for (i = 0; i < size; i++) {
         if (co->syntax & DOUBLESLASHINLINE && !comment_len) {
-            if (!strncmp(buffer + i, "//", 2)) {
-                //This is the start of an inline comment
-                pos = strchr((buffer + i), '\n');
-                if (pos) {
-                    comment_len = (pos + 1) - (buffer + i);
-                }
-                //get rid of whitespace after comment
-                comment_len += strspn(buffer + i + comment_len, " \t\n");
-                //get rid of whitespace before comment
-                while (buffer[i - 1] == ' ' || buffer[i - 1] == '\n') {
-                    i--;
-                    comment_len++;
-                }
-                if (buffer[i] == '\n') {
-                    comment_len--;
-                    i++;
-                }
-
-            }
+            comment_len = commentLength(buffer, &i, co, "//", "\n");
         }
         if (co->syntax & SINGLEHASHINLINE && !comment_len) {
-            if (buffer[i] == '#') {
-                pos = strchr((buffer + i), '\n');
-                if (pos) {
-                    comment_len = (pos + 1) - (buffer + i);
-                }
-                //get rid of whitespace after comment
-                comment_len += strspn(buffer + i + comment_len, " \t\n");
-                //get rid of whitespace before comment
-                while (buffer[i - 1] == ' ' || buffer[i - 1] == '\n') {
-                    i--;
-                    comment_len++;
-                }
-                if (buffer[i] == '\n') {
-                    comment_len--;
-                    i++;
-                }
-            }
+            comment_len = commentLength(buffer, &i, co, "#", "\n");
         }
         if (co->syntax & SLASHSTARBLOCK && !comment_len) {
-            if (!strncmp(buffer + i, "/*", 2)) {
-                pos = strstr(buffer + i, "*/");
-                if (pos) {
-                    comment_len = (pos + 2) - (buffer + i);
-                }
-                //get rid of whitespace after comment
-                comment_len += strspn(buffer + i + comment_len, " \t\n");
-                //get rid of whitespace before comment
-                while (buffer[i - 1] == ' ' || buffer[i - 1] == '\n') {
-                    i--;
-                    comment_len++;
-                }
-                if (buffer[i] == '\n') {
-                    comment_len--;
-                    i++;
-                }
-            }
+            comment_len = commentLength(buffer, &i, co, "/*", "*/");
         }
         if (comment_len) {
             flags[i] |= COMMENT;
             comment_len--;
         }
-        /*
+        //Mark isolated white space as comments as well
         if (!comment_len && buffer[i] == '\n') {
             comment_len = strspn(buffer + (i + 1), " \n\t");
         }
         if (!comment_len && buffer[i] == ' ') {
-            comment_len = strspn(buffer + (i + 1), " \n\t") + 1;
+            comment_len = strspn(buffer + (i + 1), " \n\t");
         }
-        */
     }
 }
 
@@ -162,22 +137,6 @@ void markComments(char *filename, char *buffer, char *flags, int size,
                   struct comment *co) {
     commentType(filename, buffer, co);
     commentParsing(buffer, flags, size, co);
-}
-
-//returns the distance from one newline to the next on the previous line
-//buffer[i] should be a newline character
-//RETURN + 1 can be used as the x coordinate for buffer[i]
-int previousLineLength(int i, int width, int begin, const char *buffer) {
-    if (buffer[i] != '\n') {
-        printw(0, 0, "ERROR in previousLineLength");
-        return -1;
-    } else {
-        int k = i;
-        while (k >= begin && buffer[k] != '\n') {
-            k--;
-        }
-        return (i - k) % width;
-    }
 }
 
 //fills the screen with the char filler
@@ -272,6 +231,8 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
     //start is when first key is typed, last is time() of last correct keystroke
     time_t start, last;
     bool isStarted = false;
+    char *xs = malloc(size);
+    memset(xs, 0, size);
 
     //x, y mark the user cursor
     //xt, yt are for secondary drawing when x, y can't move
@@ -308,6 +269,7 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
     attron(COLOR_PAIR(1));
     i = begin;
     while (i < size && y < height - 3) {
+        xs[i] = x;
         if (flags[i] & COMMENT) {
             attroff(COLOR_PAIR(1));
             attron(COLOR_PAIR(8));
@@ -348,14 +310,11 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
     //Check if user types key associated with cursor char
     //  if not, draw that character with red background
     while (i < used || streak) {
+        //Skip over comments and whitespace
         while (flags[i] & COMMENT) {
-            if (flags[i] & NEWLINE) {
-                y++;
-                x = 1;
-            } else {
-                x++;
-            }
             i++;
+            if (xs[i] <= xs[i-1]) y++;
+            x = xs[i];
         }
         //draw typing cursor
         if (!streak && !(flags[i] & COMMENT)) {
@@ -364,7 +323,10 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
             attroff(COLOR_PAIR(flags[i] & NEWLINE ? 7 : 2));
             move(height - 1, 0);
         }
+
+        //GET USER INPUT
         sub = getch();
+
         //If user pressed ESCAPE, we collect results for results()
         if (sub == 27) break;
         if (!isStarted) {
@@ -377,66 +339,23 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
             if (i > begin) {
                 if (streak > 0)
                     streak--;
+
+                //Color erased text white
                 attron(COLOR_PAIR(1));
                 mvaddch(y, x, buffer[i]);
                 attroff(COLOR_PAIR(1));
+
                 i--;
 
-                //backspace over leading whitespaces
-                j = i;
-                xt = x - 1;
-                while (xt >= 1 && (buffer[j] == ' ')) {
-                    j--;
-                    xt--;
-                }
-                if (!xt) {
-                    x = previousLineLength(j, width, begin, buffer) - 1;
-                    i = j;
-                    attron(COLOR_PAIR(streak ? 2 : 7));
-                    mvaddch(y, x, buffer[i]);
-                    attroff(COLOR_PAIR(streak ? 2 : 7));
-                }
+                //Move x and y, counting for newline
+                if (xs[i] >= xs[i + 1]) y--;
+                x = xs[i];
 
-                //backspace over redundant newlines (need to implement for ' ')
-                while (y > 0 && buffer[i] == '\n' && buffer[i-1] == '\n') {
+                //Skip over comments
+                while (flags[i] & COMMENT) {
+                    if (xs[i] >= xs[i + 1]) y--;
+                    x = xs[i];
                     i--;
-                    y--;
-                }
-                if (x > 1) {
-                    x--;
-                    if (streak > 0) {
-                        attron(COLOR_PAIR(1));
-                        mvaddch(y, x, buffer[i]);
-                        attroff(COLOR_PAIR(1));
-                    } else {
-                        attron(COLOR_PAIR(2));
-                        mvaddch(y, x, buffer[i]);
-                        attroff(COLOR_PAIR(2));
-                    }
-                //backspace onto previous row (this can be simplified
-                //                             with previousLineLength())
-                } else if (y != 0) {
-                    //previous row break was caused by newline character
-                    if (buffer[i] == '\n') {
-                        //count chars in previous line before \n % width
-                        j = i - 1;
-                        while (j >= 0 && buffer[j] != '\n') {
-                            j--;
-                        }
-                        x = (i - j) % width;
-                        // draw cursor
-                        y--;
-                        attron(COLOR_PAIR(7));
-                        mvaddch(y, x, 182 | A_ALTCHARSET);
-                        attroff(COLOR_PAIR(7));
-                    // row break was caused by x >= width
-                    } else {
-                        x = width - 1;
-                        y--;
-                        attron(COLOR_PAIR(2));
-                        mvaddch(y, x, buffer[i]);
-                        attroff(COLOR_PAIR(2));
-                    }
                 }
             }
         //handle normal chars
@@ -459,21 +378,11 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
                     mvaddch(y, x, buffer[i]);
                 attroff(COLOR_PAIR(3));
             }
-            x++;
             i++;
-            //move cursor down a row when appropriate
-            if (buffer[i - 1] == '\n' || x >= width) {
-                x = 1;
+            if (xs[i] <= xs[i-1]) {
                 y++;
-                while (buffer[i] == '\n') {
-                    i++;
-                    y++;
-                }
-                while (buffer[i] == ' ') {
-                    i++;
-                    x++;
-                }
             }
+            x = xs[i];
         } else {
             //here we aren't allowing users to finish with a streak of errors
             //so lets redraw the bottom border in red to alert them
@@ -486,6 +395,7 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
                      "FIX ERRORS TO CONTINUE");
             attroff(COLOR_PAIR(3));
         }
+        //print stats at the bottom of the screen
         move(height - 1, 0);
         printw("WPM: %3.2f\t\tAccuracy: %3.2f%%\t\tTime: %d:%02d",
                ((double)right / 5) / ((double)(time(NULL)-start) / 60),
@@ -494,6 +404,7 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
         move(height - 1, width - 1);
 
     }
+    free(xs);
 
     //Exit TUI window
     endwin();
@@ -589,12 +500,14 @@ void running(int argc, char **argv) {
         markComments(filename, buffer, flags, size, &co);
 
         ioctl(0,TIOCGWINSZ,&w);
-        int res = typing(buffer, flags, size, 0, w.ws_row, w.ws_col, filename, &score, &co);
+        int res = typing(buffer, flags, size, 0, w.ws_row,
+                         w.ws_col > 255 ? 256 : w.ws_col, filename, &score, &co);
         while (res < size - 1) {
             ioctl(0,TIOCGWINSZ,&w);
             results(&score, true, w.ws_row, w.ws_col);
             ioctl(0,TIOCGWINSZ,&w);
-            res = typing(buffer, flags, size, res, w.ws_row, w.ws_col, filename, &score, &co);
+            res = typing(buffer, flags, size, res, w.ws_row,
+                         w.ws_col > 255 ? 256 : w.ws_col, filename, &score, &co);
         }
         results(&score, i != argc - 1, w.ws_row, w.ws_col);
         free(buffer);
