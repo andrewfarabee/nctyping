@@ -11,7 +11,7 @@
  *         bug when character 80 is a newline           *
  *         tab characters are being treated as spaces   *
  *         wrapped lines are displayed and stored wrong *
- *         get rid of comment struct and just use syntax*
+ *         newline typo mark before comments not erased.*
  ********************************************************
  */
 
@@ -40,12 +40,6 @@ enum CommentMask {
     SLASHSTARBLOCK = 256
 };
 
-//struct for storing comment syntax for each file
-struct comment {
-    char *ext;
-    unsigned short int syntax;
-};
-
 //structure for returning results of each "typing"
 struct scoring {
     int right;
@@ -53,8 +47,7 @@ struct scoring {
     int time;
 };
 
-int commentLength(const char *buffer, int *i, struct comment *co,
-                  const char *open, const char *close) {
+int commentLength(const char *buffer, int *i, const char *open, const char *close) {
     int comment_len = 0;
     char *pos;
     if (!strncmp(buffer + (*i), open, strlen(open))) {
@@ -78,19 +71,45 @@ int commentLength(const char *buffer, int *i, struct comment *co,
     return comment_len;
 }
 
-void commentParsing(const char *buffer, char *flags, int size, struct comment *co) {
+//populates the comment structure
+//buffer needs to be passed in to look for "#!/bin/bash",etc. at the top
+unsigned short int commentType(char *filename, const char *buffer) {
+    char *ext = filename + strlen(filename) - 1;
+    unsigned short int syntax = 0;
+
+    while (ext > filename && *ext != '/') ext--;
+    while (*ext != '.' && *ext) ext++;
+
+    if (*ext == '.') ext++;
+
+    /* Syntax mask so far:
+     * 0-bit = // inline
+     * 1-bit = # inline
+     * 8-bit = / * to * / block (without spaces)
+     */
+    if (!strcmp(ext, "c") || !strcmp(ext, "h") || !strcmp(ext, "cc") ||
+        !strcmp(ext, "cpp") || !strcmp(ext, "cxx") || !strcmp(ext, "hpp")) {
+        syntax = DOUBLESLASHINLINE | SLASHSTARBLOCK;
+    } else {
+        syntax = 0;
+    }
+    return syntax;
+}
+
+void markComments(char *filename, const char *buffer, char *flags, int size) {
+    unsigned short int syntax = commentType(filename, buffer);
     char* pos;
     int i;
     int comment_len = 0;
     for (i = 0; i < size; i++) {
-        if (co->syntax & DOUBLESLASHINLINE && !comment_len) {
-            comment_len = commentLength(buffer, &i, co, "//", "\n");
+        if (syntax & DOUBLESLASHINLINE && !comment_len) {
+            comment_len = commentLength(buffer, &i, "//", "\n");
         }
-        if (co->syntax & SINGLEHASHINLINE && !comment_len) {
-            comment_len = commentLength(buffer, &i, co, "#", "\n");
+        if (syntax & SINGLEHASHINLINE && !comment_len) {
+            comment_len = commentLength(buffer, &i, "#", "\n");
         }
-        if (co->syntax & SLASHSTARBLOCK && !comment_len) {
-            comment_len = commentLength(buffer, &i, co, "/*", "*/");
+        if (syntax & SLASHSTARBLOCK && !comment_len) {
+            comment_len = commentLength(buffer, &i, "/*", "*/");
         }
         if (comment_len) {
             flags[i] |= COMMENT;
@@ -104,37 +123,6 @@ void commentParsing(const char *buffer, char *flags, int size, struct comment *c
             comment_len = strspn(buffer + (i + 1), " \n\t");
         }
     }
-}
-
-//populates the comment structure
-//buffer needs to be passed in to look for "#!/bin/bash",etc. at the top
-void commentType(char *filename, char* buffer, struct comment *co) {
-    char *ext = filename + strlen(filename) - 1;
-
-
-    while (ext > filename && *ext != '/') ext--;
-    while (*ext != '.' && *ext) ext++;
-
-    if (*ext == '.') ext++;
-    co->ext = ext;
-
-    /* Syntax mask so far:
-     * 0-bit = // inline
-     * 1-bit = # inline
-     * 8-bit = / * to * / block (without spaces)
-     */
-    if (!strcmp(ext, "c") || !strcmp(ext, "h") || !strcmp(ext, "cc") ||
-        !strcmp(ext, "cpp") || !strcmp(ext, "cxx") || !strcmp(ext, "hpp")) {
-        co->syntax = DOUBLESLASHINLINE | SLASHSTARBLOCK;
-    } else {
-        co->syntax = 0;
-    }
-}
-
-void markComments(char *filename, char *buffer, char *flags, int size,
-                  struct comment *co) {
-    commentType(filename, buffer, co);
-    commentParsing(buffer, flags, size, co);
 }
 
 //fills the screen with the char filler
@@ -223,10 +211,9 @@ int file_pop(char *filename, char **buffer, char **flags) {
 //height, width: useable screen dimensional
 //filename: a string containing the name of the file in buffer
 //score: structure that is used to return typing stats (right, wrong, time)
-//co: stores comment structure, though this really isn't necessary
 //RETURNS: how much of the buffer was completed before moving to next screen
 int typing(const char *buffer, char *flags, int size, int begin, int height, int width,
-           char* filename, struct scoring *score, struct comment *co) {
+           char* filename, struct scoring *score) {
     //start is when first key is typed, last is time() of last correct keystroke
     time_t start, last;
     bool isStarted = false;
@@ -484,7 +471,6 @@ void results(struct scoring *score, bool more, int height, int width) {
 //Just a wrapper function for handling splitting the buffer up into screens
 void running(int argc, char **argv) {
     struct winsize w;
-    struct comment co;
     struct scoring score;
     char *buffer, *flags;
     char filename[255];
@@ -502,17 +488,17 @@ void running(int argc, char **argv) {
             strcpy(filename, argv[i]);
         }
 
-        markComments(filename, buffer, flags, size, &co);
+        markComments(filename, buffer, flags, size);
 
         ioctl(0,TIOCGWINSZ,&w);
         int res = typing(buffer, flags, size, 0, w.ws_row,
-                         w.ws_col > 255 ? 256 : w.ws_col, filename, &score, &co);
+                         w.ws_col > 255 ? 256 : w.ws_col, filename, &score);
         while (res < size - 1) {
             ioctl(0,TIOCGWINSZ,&w);
             results(&score, true, w.ws_row, w.ws_col);
             ioctl(0,TIOCGWINSZ,&w);
             res = typing(buffer, flags, size, res, w.ws_row,
-                         w.ws_col > 255 ? 256 : w.ws_col, filename, &score, &co);
+                         w.ws_col > 255 ? 256 : w.ws_col, filename, &score);
         }
         results(&score, i != argc - 1, w.ws_row, w.ws_col);
         free(buffer);
