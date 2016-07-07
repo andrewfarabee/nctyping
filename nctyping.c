@@ -12,11 +12,7 @@
  *         bug when character 80 is a newline           *
  *         tab characters are being treated as spaces   *
  *         wrapped lines are displayed and stored wrong *
- *         not recognizing mid comment after pause      *
- *         ^^ NOTE: this will not be important since    *
- *                  once comment detection during the   *
- *                  typing phase is implemented, it will*
- *                  be impossible to stop mid-comment   *
+ *         can't backspace past a comment               *
  ********************************************************
  */
 
@@ -70,6 +66,18 @@ void commentParsing(const char *buffer, char *flags, int size, struct comment *c
                 if (pos) {
                     comment_len = (pos + 1) - (buffer + i);
                 }
+                //get rid of whitespace after comment
+                comment_len += strspn(buffer + i + comment_len, " \t\n");
+                //get rid of whitespace before comment
+                while (buffer[i - 1] == ' ' || buffer[i - 1] == '\n') {
+                    i--;
+                    comment_len++;
+                }
+                if (buffer[i] == '\n') {
+                    comment_len--;
+                    i++;
+                }
+
             }
         }
         if (co->syntax & SINGLEHASHINLINE && !comment_len) {
@@ -77,6 +85,17 @@ void commentParsing(const char *buffer, char *flags, int size, struct comment *c
                 pos = strchr((buffer + i), '\n');
                 if (pos) {
                     comment_len = (pos + 1) - (buffer + i);
+                }
+                //get rid of whitespace after comment
+                comment_len += strspn(buffer + i + comment_len, " \t\n");
+                //get rid of whitespace before comment
+                while (buffer[i - 1] == ' ' || buffer[i - 1] == '\n') {
+                    i--;
+                    comment_len++;
+                }
+                if (buffer[i] == '\n') {
+                    comment_len--;
+                    i++;
                 }
             }
         }
@@ -86,14 +105,31 @@ void commentParsing(const char *buffer, char *flags, int size, struct comment *c
                 if (pos) {
                     comment_len = (pos + 2) - (buffer + i);
                 }
+                //get rid of whitespace after comment
+                comment_len += strspn(buffer + i + comment_len, " \t\n");
+                //get rid of whitespace before comment
+                while (buffer[i - 1] == ' ' || buffer[i - 1] == '\n') {
+                    i--;
+                    comment_len++;
+                }
+                if (buffer[i] == '\n') {
+                    comment_len--;
+                    i++;
+                }
             }
         }
         if (comment_len) {
             flags[i] |= COMMENT;
             comment_len--;
         }
-        if (buffer[i] == '\n')
-            flags[i] |= NEWLINE;
+        /*
+        if (!comment_len && buffer[i] == '\n') {
+            comment_len = strspn(buffer + (i + 1), " \n\t");
+        }
+        if (!comment_len && buffer[i] == ' ') {
+            comment_len = strspn(buffer + (i + 1), " \n\t") + 1;
+        }
+        */
     }
 }
 
@@ -286,7 +322,7 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
         } else {
             move(y, x);
         }
-        if (buffer[i] & COMMENT) {
+        if (flags[i] & COMMENT) {
             attroff(COLOR_PAIR(8));
             attron(COLOR_PAIR(1));
         }
@@ -304,19 +340,30 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
     mvprintw(y, (width - strlen(filename)) / 2, "%s", filename);
     attroff(COLOR_PAIR(2));
 
-    //draw typing cursor
     x = 1;
     y = 0;
     move(y, x);
 
     i = begin;
-    attron(COLOR_PAIR(2));
-    mvaddch(y, x, buffer[i]);
-    attroff(COLOR_PAIR(2));
-    move(height - 1, 0);
     //Check if user types key associated with cursor char
     //  if not, draw that character with red background
     while (i < used || streak) {
+        while (flags[i] & COMMENT) {
+            if (flags[i] & NEWLINE) {
+                y++;
+                x = 1;
+            } else {
+                x++;
+            }
+            i++;
+        }
+        //draw typing cursor
+        if (!streak && !(flags[i] & COMMENT)) {
+            attron(COLOR_PAIR(flags[i] & NEWLINE ? 7 : 2));
+            mvaddch(y, x, flags[i] & NEWLINE ? 182 | A_ALTCHARSET : buffer[i]);
+            attroff(COLOR_PAIR(flags[i] & NEWLINE ? 7 : 2));
+            move(height - 1, 0);
+        }
         sub = getch();
         //If user pressed ESCAPE, we collect results for results()
         if (sub == 27) break;
@@ -426,18 +473,6 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
                     i++;
                     x++;
                 }
-            }
-            //draw special newline character so user knows when to press enter
-            if (streak > 0) {
-                //dont put a cursor if there was a mistake
-            } else if (buffer[i] == '\n') {
-                attron(COLOR_PAIR(7));
-                mvaddch(y, x, 182 | A_ALTCHARSET);
-                attroff(COLOR_PAIR(7));
-            } else {
-                attron(COLOR_PAIR(2));
-                mvaddch(y, x, buffer[i]);
-                attroff(COLOR_PAIR(2));
             }
         } else {
             //here we aren't allowing users to finish with a streak of errors
