@@ -336,14 +336,14 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
         //handle backspace
         if (sub == 127) {
             if (i > begin) {
-                if (streak > 0)
+                if (streak > 0) {
                     streak--;
-
-                //Color erased text white
-                attron(COLOR_PAIR(1));
-                mvaddch(y, x, buffer[i]);
-                attroff(COLOR_PAIR(1));
-
+                } else {
+                    //color correct text erased white
+                    attron(COLOR_PAIR(1));
+                    mvaddch(y, x, buffer[i]);
+                    attroff(COLOR_PAIR(1));
+                }
 
                 //Move x and y, counting for newline
                 if (xs[i-1] >= xs[i]) y--;
@@ -351,6 +351,12 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
 
                 i--;
 
+                if (streak) {
+                    //Color wrong text erased white
+                    attron(COLOR_PAIR(1));
+                    mvaddch(y, x, buffer[i]);
+                    attroff(COLOR_PAIR(1));
+                }
                 //Skip over comments
                 while (flags[i] & COMMENT) {
                     if (xs[i-1] >= xs[i]) y--;
