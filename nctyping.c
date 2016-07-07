@@ -8,11 +8,9 @@
  * ISSUES: no scrolling down page                       *
  *         stdin not working from pipe                  *
  *         time() is nonmonotonic and inaccurate        *
- *         should recognize and skip code comments      *
  *         bug when character 80 is a newline           *
  *         tab characters are being treated as spaces   *
  *         wrapped lines are displayed and stored wrong *
- *         off-by-one: backspace comment skipping (line)*
  *         get rid of comment struct and just use syntax*
  ********************************************************
  */
@@ -225,6 +223,7 @@ int file_pop(char *filename, char **buffer, char **flags) {
 //height, width: useable screen dimensional
 //filename: a string containing the name of the file in buffer
 //score: structure that is used to return typing stats (right, wrong, time)
+//co: stores comment structure, though this really isn't necessary
 //RETURNS: how much of the buffer was completed before moving to next screen
 int typing(const char *buffer, char *flags, int size, int begin, int height, int width,
            char* filename, struct scoring *score, struct comment *co) {
@@ -321,7 +320,7 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
             attron(COLOR_PAIR(flags[i] & NEWLINE ? 7 : 2));
             mvaddch(y, x, flags[i] & NEWLINE ? 182 | A_ALTCHARSET : buffer[i]);
             attroff(COLOR_PAIR(flags[i] & NEWLINE ? 7 : 2));
-            move(height - 1, 0);
+            move(height - 1, width - 1);
         }
 
         //GET USER INPUT
@@ -345,16 +344,17 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
                 mvaddch(y, x, buffer[i]);
                 attroff(COLOR_PAIR(1));
 
-                i--;
 
                 //Move x and y, counting for newline
-                if (xs[i] >= xs[i + 1]) y--;
-                x = xs[i];
+                if (xs[i-1] >= xs[i]) y--;
+                x = xs[i-1];
+
+                i--;
 
                 //Skip over comments
                 while (flags[i] & COMMENT) {
-                    if (xs[i] >= xs[i + 1]) y--;
-                    x = xs[i];
+                    if (xs[i-1] >= xs[i]) y--;
+                    x = xs[i-1];
                     i--;
                 }
             }
@@ -402,7 +402,6 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
                ((double)right/(right+wrong))*100, (time(NULL) - start) / 60,
                (time(NULL) - start) % 60);
         move(height - 1, width - 1);
-
     }
     free(xs);
 
