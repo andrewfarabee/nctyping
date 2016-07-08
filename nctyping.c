@@ -11,7 +11,7 @@
  *         bug when character 80 is a newline           *
  *         tab characters are being treated as spaces   *
  *         wrapped lines are displayed and stored wrong *
- *         newline typo mark before comments not erased.*
+ *         no newline if inline co follows typed text   *
  ********************************************************
  */
 
@@ -221,10 +221,10 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
     memset(xs, 0, size);
 
     //x, y mark the user cursor
-    //xt, yt are for secondary drawing when x, y can't move
+    //xt, is for secondary drawing when x, y can't move
     //i marks where the user cursor is in the file buffer
-    //j is for temporarily exploring the file buffer without moving i
-    int x, y, xt, yt, i, j;
+    //screen_start follows where the start of the screen was drawn
+    int x, y, xt, i, screen_start;
     char sub;       //stores the user inputted character from keyboard
     int streak = 0; //how far the user has to backspace to correct typo
     int right = 0;  //total correct keystrokes
@@ -254,7 +254,11 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
     //Draw start of buffer
     attron(COLOR_PAIR(1));
     i = begin;
+    screen_start = begin;
     while (i < size && y < height - 3) {
+        if (i == begin && flags[i] & COMMENT) {
+            begin++;
+        }
         xs[i] = x;
         if (flags[i] & COMMENT) {
             attroff(COLOR_PAIR(1));
@@ -292,7 +296,7 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
     y = 0;
     move(y, x);
 
-    i = begin;
+    i = screen_start;
     //Check if user types key associated with cursor char
     //  if not, draw that character with red background
     while (i < used || streak) {
@@ -338,17 +342,17 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
 
                 i--;
 
-                if (streak) {
-                    //Color wrong text erased white
-                    attron(COLOR_PAIR(1));
-                    mvaddch(y, x, buffer[i]);
-                    attroff(COLOR_PAIR(1));
-                }
                 //Skip over comments
                 while (flags[i] & COMMENT) {
                     if (xs[i-1] >= xs[i]) y--;
                     x = xs[i-1];
                     i--;
+                }
+                if (streak) {
+                    //Color wrong text erased white
+                    attron(COLOR_PAIR(1));
+                    mvaddch(y, x, buffer[i]);
+                    attroff(COLOR_PAIR(1));
                 }
             }
         //handle normal chars
@@ -379,12 +383,11 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
         } else {
             //here we aren't allowing users to finish with a streak of errors
             //so lets redraw the bottom border in red to alert them
-            yt = height - 2;
             attron(COLOR_PAIR(3));
             for (xt = 0; xt < width; xt++) {
-                mvaddch(yt, xt, ACS_CKBOARD);
+                mvaddch(height - 2, xt, ACS_CKBOARD);
             }
-            mvprintw(yt, (width - strlen("FIX ERRORS TO CONTINUE")) / 2,
+            mvprintw(height - 2, (width - strlen("FIX ERRORS TO CONTINUE")) / 2,
                      "FIX ERRORS TO CONTINUE");
             attroff(COLOR_PAIR(3));
         }
