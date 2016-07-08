@@ -23,7 +23,7 @@
 #include <stdlib.h>
 
 
-//these flags are used as a mask in *flags to monitor buffer states
+/* these flags are used as a mask in *flags to monitor buffer states */
 enum flags {
     TYPED = 1,
     COMMENT = 2,
@@ -33,32 +33,34 @@ enum flags {
     NEWLINE = 32
 };
 
-//Can be used with bitwise operators to assign a mask to each file extension
+/* Can be used with bitwise operators to assign masks to each file extension */
 enum CommentMask {
     DOUBLESLASHINLINE = 1,
     SINGLEHASHINLINE = 2,
     SLASHSTARBLOCK = 256
 };
 
-//structure for returning results of each "typing"
+/* structure for returning results of each "typing" */
 struct scoring {
     int right;
     int wrong;
     int time;
 };
 
-int commentLength(const char *buffer, int *i, const char *open, const char *close) {
+/* Used my markComments to know length of each comment field and whitespace */
+int commentLength(const char *buffer, int *i, const char *open,
+                  const char *close) {
     int comment_len = 0;
     char *pos;
     if (!strncmp(buffer + (*i), open, strlen(open))) {
-        //This is the start of an inline comment
+        /* This is the start of an inline comment */
         pos = strstr((buffer + (*i)), close);
         if (pos) {
             comment_len = (pos + strlen(close)) - (buffer + (*i));
         }
-        //get rid of whitespace after comment
+        /* mark whitespace after comment as part of the comment */
         comment_len += strspn(buffer + (*i) + comment_len, " \t\n");
-        //get rid of whitespace before comment
+        /* mark  whitespace before comment as part of the comment */
         while (buffer[(*i) - 1] == ' ' || buffer[(*i) - 1] == '\n') {
             (*i)--;
             comment_len++;
@@ -71,8 +73,7 @@ int commentLength(const char *buffer, int *i, const char *open, const char *clos
     return comment_len;
 }
 
-//populates the comment structure
-//buffer needs to be passed in to look for "#!/bin/bash",etc. at the top
+/* populates the comment structure TODO check buffer for "#!/bin/bash",etc. */
 unsigned short int commentType(char *filename, const char *buffer) {
     char *ext = filename + strlen(filename) - 1;
     unsigned short int syntax = 0;
@@ -96,6 +97,7 @@ unsigned short int commentType(char *filename, const char *buffer) {
     return syntax;
 }
 
+/* toggles flags for comment fields based on interpretation of the file lang */
 void markComments(char *filename, const char *buffer, char *flags, int size) {
     unsigned short int syntax = commentType(filename, buffer);
     char* pos;
@@ -115,7 +117,7 @@ void markComments(char *filename, const char *buffer, char *flags, int size) {
             flags[i] |= COMMENT;
             comment_len--;
         }
-        //Mark isolated white space as comments as well
+        /* Mark isolated white space as comments as well */
         if (!comment_len && buffer[i] == '\n') {
             comment_len = strspn(buffer + (i + 1), " \n\t");
         }
@@ -125,9 +127,7 @@ void markComments(char *filename, const char *buffer, char *flags, int size) {
     }
 }
 
-//fills the screen with the char filler
-//could also be used to draw rectangles if we add two more arguments
-//only uses black and white, current_color is used to maintain color state
+/* fills the screen with the char filler, current_color only maintains state */
 void clearscreen(int height, int width, int current_color, int filler) {
     if (current_color)
         attroff(COLOR_PAIR(current_color));
@@ -141,7 +141,7 @@ void clearscreen(int height, int width, int current_color, int filler) {
         attron(COLOR_PAIR(current_color));
 }
 
-//returns color pair for typed chars based on the time it took to type them
+/* returns color pair for typed chars based on the time it took to type them */
 int colortiming(int diff) {
     if (diff > 2) {
         return 6;
@@ -152,7 +152,7 @@ int colortiming(int diff) {
     }
 }
 
-//reads typeable content from a file and populates the buffer for typing()
+/* reads typeable content from a file and populates the buffer for typing() */
 int file_pop(char *filename, char **buffer, char **flags) {
     FILE *fd;
     int i = 0;
@@ -164,13 +164,13 @@ int file_pop(char *filename, char **buffer, char **flags) {
         return i;
     }
 
-    //getting the file size
+    /* getting the file size */
     if (strcmp(filename, "/dev/stdin")) {
         fseek(fd, 0L, SEEK_END);
         size = ftell(fd);
         fseek(fd, 0L, SEEK_SET);
     } else {
-    //we need a constant size for a stdin buffer because fseek isn't possible
+    /* need a constant size for a stdin buffer because fseek isn't possible */
         size = 1024 * 1024;
     }
 
@@ -189,7 +189,7 @@ int file_pop(char *filename, char **buffer, char **flags) {
             if (sub == '\n') (*flags)[i] |= NEWLINE;
             (*buffer)[i] = sub;
             i++;
-        //tabs are treated as spaces for simplicity
+        /* tabs are treated as spaces for simplicity */
         } else if (sub == '\t') {
             (*buffer)[i] = ' ';
             i++;
@@ -201,57 +201,57 @@ int file_pop(char *filename, char **buffer, char **flags) {
     return i;
 }
 
-//Where almost all the action happens, displays a screen from the buffer and
-//collects results as the user types along with it
-//
-//buffer: a single string of the entire file
-//flags: a string of flags corresponding to the chars at that index in buffer
-//size: size of buffer string
-//begin: where to start typing in buffer
-//height, width: useable screen dimensional
-//filename: a string containing the name of the file in buffer
-//score: structure that is used to return typing stats (right, wrong, time)
-//RETURNS: how much of the buffer was completed before moving to next screen
-int typing(const char *buffer, char *flags, int size, int begin, int height, int width,
-           char* filename, struct scoring *score) {
-    //start is when first key is typed, last is time() of last correct keystroke
+/* Where almost all the action happens, displays a screen from the buffer and
+ * collects results as the user types along with it
+ *
+ * buffer: a single string of the entire file
+ * flags: a string of flags corresponding to the chars at that index in buffer
+ * size: size of buffer string
+ * begin: where to start typing in buffer
+ * height, width: useable screen dimensional
+ * filename: a string containing the name of the file in buffer
+ * score: structure that is used to return typing stats (right, wrong, time)
+ * RETURNS: how much of the buffer was completed before moving to next screen
+ */
+int typing(const char *buffer, char *flags, int size, int begin, int height,
+           int width, char* filename, struct scoring *score) {
+    /* start: time first key is typed, last: time of last correct keystroke */
     time_t start, last;
     bool isStarted = false;
     char *xs = malloc(size);
     memset(xs, 0, size);
 
-    //x, y mark the user cursor
-    //xt, is for secondary drawing when x, y can't move
-    //i marks where the user cursor is in the file buffer
-    //screen_start follows where the start of the screen was drawn
+    /* x, y mark the user cursor
+     * xt, is for secondary drawing when x, y can't move
+     * i marks where the user cursor is in the file buffer
+     * screen_start follows where the start of the screen was drawn */
     int x, y, xt, i, screen_start;
-    char sub;       //stores the user inputted character from keyboard
-    int streak = 0; //how far the user has to backspace to correct typo
-    int right = 0;  //total correct keystrokes
-    int wrong = 0;  //total incorrect keystrokes
-    int used = 0;   //how many characters must be typed on this screen to end
+    char sub;       /* stores the user inputted character from keyboard */
+    int streak = 0; /* how far the user has to backspace to correct typo */
+    int right = 0;  /* total correct keystrokes */
+    int wrong = 0;  /* total incorrect keystrokes */
+    int used = 0;   /* # chars must be typed on this screen TODO remove */
 
-
-    //Initializing the ncurses screen
+    /* Initializing the ncurses screen */
     initscr();
     cbreak();
     noecho();
 
-    //Initializing color schemes
+    /* Initializing color schemes */
     start_color();
-    init_pair(1, COLOR_WHITE, COLOR_BLACK); //to be typed
-    init_pair(2, COLOR_BLACK, COLOR_MAGENTA);  //typing cursor
-    init_pair(3, COLOR_BLACK, COLOR_RED);   //mistake hilight
-    init_pair(4, COLOR_CYAN, COLOR_BLACK);  //fast match
-    init_pair(5, COLOR_GREEN, COLOR_BLACK); //medium match
-    init_pair(6, COLOR_YELLOW, COLOR_BLACK);//slow match
-    init_pair(7, COLOR_BLACK, COLOR_WHITE); //newline char
-    init_pair(8, COLOR_BLUE, COLOR_BLACK);  //commmented code
+    init_pair(1, COLOR_WHITE, COLOR_BLACK);    /* to be typed */
+    init_pair(2, COLOR_BLACK, COLOR_MAGENTA);  /* typing cursor */
+    init_pair(3, COLOR_BLACK, COLOR_RED);      /* mistake hilight */
+    init_pair(4, COLOR_CYAN, COLOR_BLACK);     /* fast match */
+    init_pair(5, COLOR_GREEN, COLOR_BLACK);    /* medium match */
+    init_pair(6, COLOR_YELLOW, COLOR_BLACK);   /* slow match */
+    init_pair(7, COLOR_BLACK, COLOR_WHITE);    /* newline char */
+    init_pair(8, COLOR_BLUE, COLOR_BLACK);     /* commmented code */
 
     x = 1;
     y = 0;
 
-    //Draw start of buffer
+    /* Draw start of buffer */
     attron(COLOR_PAIR(1));
     i = begin;
     screen_start = begin;
@@ -271,8 +271,6 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
         if (buffer[i] != '\n') {
             mvaddch(y, x, buffer[i]);
             x++;
-        } else {
-            move(y, x);
         }
         if (flags[i] & COMMENT) {
             attroff(COLOR_PAIR(8));
@@ -283,7 +281,7 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
     used = i;
     attroff(COLOR_PAIR(1));
 
-    //draw bottom border
+    /* draw bottom border */
     y = height - 2;
     attron(COLOR_PAIR(2));
     for (x = 0; x < width; x++) {
@@ -294,19 +292,18 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
 
     x = 1;
     y = 0;
-    move(y, x);
 
     i = screen_start;
-    //Check if user types key associated with cursor char
-    //  if not, draw that character with red background
+    /* Check if user types key associated with cursor char
+     *  if not, draw that character with red background */
     while (i < used || streak) {
-        //Skip over comments and whitespace
+        /* Skip over comments and whitespace */
         while (flags[i] & COMMENT) {
             i++;
             if (xs[i] <= xs[i-1]) y++;
             x = xs[i];
         }
-        //draw typing cursor
+        /* draw typing cursor */
         if (!streak && !(flags[i] & COMMENT)) {
             attron(COLOR_PAIR(flags[i] & NEWLINE ? 7 : 2));
             mvaddch(y, x, flags[i] & NEWLINE ? 182 | A_ALTCHARSET : buffer[i]);
@@ -314,57 +311,57 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
             move(height - 1, width - 1);
         }
 
-        //GET USER INPUT
+        /* GET USER INPUT */
         sub = getch();
 
-        //If user pressed ESCAPE, we collect results for results()
+        /* If user pressed ESCAPE, we collect results for results() */
         if (sub == 27) break;
         if (!isStarted) {
             isStarted = true;
             start = time(NULL);
             last = time(NULL);
         }
-        //handle backspace
+        /* handle backspace */
         if (sub == 127) {
             if (i > begin) {
                 if (streak > 0) {
                     streak--;
                 } else {
-                    //color correct text erased white
+                    /* color correct text erased white */
                     attron(COLOR_PAIR(1));
                     mvaddch(y, x, buffer[i]);
                     attroff(COLOR_PAIR(1));
                 }
 
-                //Move x and y, counting for newline
+                /* Move x and y, counting for newline */
                 if (xs[i-1] >= xs[i]) y--;
                 x = xs[i-1];
 
                 i--;
 
-                //Skip over comments
+                /* Skip over comments */
                 while (flags[i] & COMMENT) {
                     if (xs[i-1] >= xs[i]) y--;
                     x = xs[i-1];
                     i--;
                 }
                 if (streak) {
-                    //Color wrong text erased white
+                    /* Color wrong text erased white */
                     attron(COLOR_PAIR(1));
                     mvaddch(y, x, buffer[i]);
                     attroff(COLOR_PAIR(1));
                 }
             }
-        //handle normal chars
+        /* handle normal chars */
         } else if (i < used - 1 || !streak) {
-            //correct keystroke
+            /* correct keystroke */
             if (sub == buffer[i] && streak == 0) {
                 right++;
                 attron(COLOR_PAIR(colortiming(time(NULL) - last)));
                 mvaddch(y, x, buffer[i]);
                 attroff(COLOR_PAIR(colortiming(time(NULL) - last)));
                 last = time(NULL);
-            //wrong keystroke
+            /* wrong keystroke */
             } else {
                 streak++;
                 wrong++;
@@ -381,17 +378,17 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
             }
             x = xs[i];
         } else {
-            //here we aren't allowing users to finish with a streak of errors
-            //so lets redraw the bottom border in red to alert them
+            /* here we aren't allowing users to finish with a streak of errors
+             * so lets redraw the bottom border in red to alert them */
             attron(COLOR_PAIR(3));
             for (xt = 0; xt < width; xt++) {
                 mvaddch(height - 2, xt, ACS_CKBOARD);
             }
-            mvprintw(height - 2, (width - strlen("FIX ERRORS TO CONTINUE")) / 2,
-                     "FIX ERRORS TO CONTINUE");
+            move(height - 2, (width - strlen("FIX ERRORS TO CONTINUE")) / 2);
+            printw("FIX ERRORS TO CONTINUE");
             attroff(COLOR_PAIR(3));
         }
-        //print stats at the bottom of the screen
+        /* print stats at the bottom of the screen */
         move(height - 1, 0);
         printw("WPM: %3.2f\t\tAccuracy: %3.2f%%\t\tTime: %d:%02d",
                ((double)right / 5) / ((double)(time(NULL)-start) / 60),
@@ -401,7 +398,7 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
     }
     free(xs);
 
-    //Exit TUI window
+    /* Exit TUI window */
     endwin();
     score->right = right;
     score->wrong = wrong;
@@ -409,9 +406,10 @@ int typing(const char *buffer, char *flags, int size, int begin, int height, int
     return i;
 }
 
-//displays the results of a section of typing
-//this is usually the results of a screen of text
-//but may also be triggered by user pressing ESCAPE as a sort of PAUSE
+/* displays the results of a section of typing
+ * this is usually the results of a screen of text
+ * but may also be triggered by user pressing ESCAPE as a sort of PAUSE
+ */
 void results(struct scoring *score, bool more, int height, int width) {
     initscr();
     cbreak();
@@ -421,10 +419,10 @@ void results(struct scoring *score, bool more, int height, int width) {
     int x;
     int y;
 
-    //clear screen
+    /* clear screen */
     clearscreen(height, width, 0, ACS_PLUS);
 
-    //print box
+    /* print box */
     y = (height / 2) - 5;
     attron(COLOR_PAIR(1));
     for (x = (width / 2) - 20; x < (width / 2) + 20; x++) {
@@ -443,7 +441,7 @@ void results(struct scoring *score, bool more, int height, int width) {
         mvaddch(y, x, ACS_CKBOARD);
     }
 
-    //print results
+    /* print results */
     move((height / 2) - 3, (width / 2) - 13);
     printw("Words Per Minute:  %6.2f",
            ((double)score->right / 5) / ((double)score->time / 60));
@@ -461,17 +459,17 @@ void results(struct scoring *score, bool more, int height, int width) {
     move(height - 1, width - 1);
     attroff(COLOR_PAIR(1));
 
-    //Wait for the user to press ENTER
+    /* Wait for the user to press ENTER */
     char sub = getch();
     while (sub != '\n') {
         sub = getch();
     }
-    //clear screen again
+    /* clear screen again */
     clearscreen(height, width, 0, ' ');
     endwin();
 }
 
-//Just a wrapper function for handling splitting the buffer up into screens
+/* Just a wrapper function for handling splitting the buffer up into screens */
 void running(int argc, char **argv) {
     struct winsize w;
     struct scoring score;
@@ -480,9 +478,9 @@ void running(int argc, char **argv) {
     int size;
     int i = 0;
 
-    //this for loop will take us through each file to be typed
+    /* this for loop will take us through each file to be typed */
     for (i = 1; i < argc; i++) {
-        //check if first arg was '-s'
+        /* check if first arg was '-s' */
         if (!strcmp(argv[i], "-s")) {
             size = file_pop("/dev/stdin", &buffer, &flags);
             strcpy(filename, "stdin");
@@ -508,8 +506,8 @@ void running(int argc, char **argv) {
     }
 }
 
-//Don't really need envp at the moment, but hopefully in the future I
-//can use it to find default files for when the user doesn't specify one
+/* Don't really need envp at the moment, but hopefully in the future I
+ * can use it to find default files for when the user doesn't specify one */
 int main(int argc, char **argv, char **envp) {
     if (argc < 2) {
         printf("Usage: %s [-s] [filename] ... [filename]\n", argv[0]);
