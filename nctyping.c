@@ -12,6 +12,7 @@
  *         tab characters are being treated as spaces   *
  *         wrapped lines are displayed and stored wrong *
  *         no newline if inline co follows typed text   *
+ *         extra typable char when scrn ends in comment *
  ********************************************************
  */
 
@@ -37,7 +38,8 @@ enum flags {
 enum CommentMask {
     DOUBLESLASHINLINE = 1,
     SINGLEHASHINLINE = 2,
-    SLASHSTARBLOCK = 256
+    SLASHSTARBLOCK = 256,
+    ANGLEHASHBLOCK = 512
 };
 
 /* structure for returning results of each "typing" */
@@ -73,7 +75,7 @@ int commentLength(const char *buffer, int *i, const char *open,
     return comment_len;
 }
 
-/* populates the comment structure TODO check buffer for "#!/bin/bash",etc. */
+/* estimates the comment syntax for a file based on filename and contents */
 unsigned short int commentType(char *filename, const char *buffer) {
     char *ext = filename + strlen(filename) - 1;
     unsigned short int syntax = 0;
@@ -87,10 +89,23 @@ unsigned short int commentType(char *filename, const char *buffer) {
      * 0-bit = // inline
      * 1-bit = # inline
      * 8-bit = / * to * / block (without spaces)
+     * 9-bit = <# to #> block
      */
     if (!strcmp(ext, "c") || !strcmp(ext, "h") || !strcmp(ext, "cc") ||
-        !strcmp(ext, "cpp") || !strcmp(ext, "cxx") || !strcmp(ext, "hpp")) {
+        !strcmp(ext, "cpp") || !strcmp(ext, "cxx") || !strcmp(ext, "hpp") ||
+        !strcmp(ext, "c++")) {
         syntax = DOUBLESLASHINLINE | SLASHSTARBLOCK;
+    } else if (!strncmp(buffer, "#!/bin/bash", strlen("#!/bin/bash")) ||
+               !strncmp(buffer, "#!/bin/sh", strlen("#!/bin/sh")) ||
+               !strncmp(buffer, "#!/bin/csh", strlen("#!/bin/csh")) ||
+               !strncmp(buffer, "#!/usr/bin/awk", strlen("#!/usr/bin/awk")) ||
+               !strcmp(ext, "bash") || !strcmp(ext, "tcl") ||
+               !strcmp(ext, "csh") || !strcmp(ext, "mpl") ||
+               !strcmp(ext, "mla") || !strcmp(ext, "ps1") ||
+               !strcmp(ext, "m") || !strcmp(ext, "r") || !strcmp(ext, "sh") ||
+               !strncmp(buffer, "#!/usr/bin/Rscript",
+                        strlen("#!/usr/bin/Rscript"))) {
+        syntax = SINGLEHASHINLINE | ANGLEHASHBLOCK;
     } else {
         syntax = 0;
     }
@@ -112,6 +127,9 @@ void markComments(char *filename, const char *buffer, char *flags, int size) {
         }
         if (syntax & SLASHSTARBLOCK && !comment_len) {
             comment_len = commentLength(buffer, &i, "/*", "*/");
+        }
+        if (syntax & ANGLEHASHBLOCK && !comment_len) {
+            comment_len = commentLength(buffer, &i, "<#", "#>");
         }
         if (comment_len) {
             flags[i] |= COMMENT;
