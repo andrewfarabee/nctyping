@@ -39,7 +39,9 @@ enum CommentMask {
     DOUBLESLASHINLINE = 1,
     SINGLEHASHINLINE = 2,
     SLASHSTARBLOCK = 256,
-    ANGLEHASHBLOCK = 512
+    ANGLEHASHBLOCK = 512,
+    TRIPLESQUOTEBLOCK = 1024,
+    TRIPLEDQUOTEBLOCK = 2048
 };
 
 /* structure for returning results of each "typing" */
@@ -56,7 +58,7 @@ int commentLength(const char *buffer, int *i, const char *open,
     char *pos;
     if (!strncmp(buffer + (*i), open, strlen(open))) {
         /* This is the start of an inline comment */
-        pos = strstr((buffer + (*i)), close);
+        pos = strstr((buffer + (*i) + 1), close);
         if (pos) {
             comment_len = (pos + strlen(close)) - (buffer + (*i));
         }
@@ -90,11 +92,28 @@ unsigned short int commentType(char *filename, const char *buffer) {
      * 1-bit = # inline
      * 8-bit = / * to * / block (without spaces)
      * 9-bit = <# to #> block
+     * 10-bit = ''' block
+     * 11-bit = """ block
      */
     if (!strcmp(ext, "c") || !strcmp(ext, "h") || !strcmp(ext, "cc") ||
         !strcmp(ext, "cpp") || !strcmp(ext, "cxx") || !strcmp(ext, "hpp") ||
-        !strcmp(ext, "c++")) {
+        !strcmp(ext, "c++") || !strcmp(ext, "cs") || !strcmp(ext, "java") ||
+        !strcmp(ext, "rs") || !strcmp(ext, "rlib") || !strcmp(ext, "d") ||
+        !strcmp(ext, "js")) {
         syntax = DOUBLESLASHINLINE | SLASHSTARBLOCK;
+    } else if (!strncmp(buffer, "#!/usr/bin/env py",
+                        strlen("#!/usr/bin/env py")) ||
+               !strcmp(ext, "py") || !strcmp(ext, "pyc") ||
+               !strcmp(ext, "pyd") || !strcmp(ext, "pyo") ||
+               !strcmp(ext, "pyw") || !strcmp(ext, "pyz")) {
+        syntax = SINGLEHASHINLINE | TRIPLESQUOTEBLOCK | TRIPLEDQUOTEBLOCK;
+    } else if (!strncmp(buffer, "#!/usr/bin/env php",
+                        strlen("#!/usr/bin/env php")) ||
+               !strcmp(ext, "php") || !strcmp(ext, "phtml") ||
+               !strcmp(ext, "php3") || !strcmp(ext, "php4") ||
+               !strcmp(ext, "php5") || !strcmp(ext, "php7") ||
+               !strcmp(ext, "phps")) {
+        syntax = DOUBLESLASHINLINE | SINGLEHASHINLINE | SLASHSTARBLOCK;
     } else if (!strncmp(buffer, "#!/bin/bash", strlen("#!/bin/bash")) ||
                !strncmp(buffer, "#!/bin/sh", strlen("#!/bin/sh")) ||
                !strncmp(buffer, "#!/bin/csh", strlen("#!/bin/csh")) ||
@@ -130,6 +149,12 @@ void markComments(char *filename, const char *buffer, char *flags, int size) {
         }
         if (syntax & ANGLEHASHBLOCK && !comment_len) {
             comment_len = commentLength(buffer, &i, "<#", "#>");
+        }
+        if (syntax & TRIPLESQUOTEBLOCK && !comment_len) {
+            comment_len = commentLength(buffer, &i, "'''", "'''");
+        }
+        if (syntax & TRIPLEDQUOTEBLOCK && !comment_len) {
+            comment_len = commentLength(buffer, &i, "\"\"\"", "\"\"\"");
         }
         if (comment_len) {
             flags[i] |= COMMENT;
