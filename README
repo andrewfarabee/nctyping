@@ -1,1 +1,17 @@
 nctyping -- light CLI for practicing typing
+
+
+INSTALL =======================================================================
+
+From the nctyping directory, nctyping can be installed by running:
+
+    $ gcc -o nctyping nctyping.c -lncurses
+
+and optionally:
+
+    # mv nctyping /usr/bin
+
+In order to build the program you will need to have gcc and ncurses installed.
+On debian/ubuntu systems this can be done with
+
+    # apt-get install gcc libncurses5-dev
