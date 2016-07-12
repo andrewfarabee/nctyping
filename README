@@ -1,5 +1,32 @@
 nctyping -- light CLI for practicing typing
 
+COMMENTS ======================================================================
+
+nctyping recognizes and skips over comments in source code.  Recognition is
+currently based on file extensions or leading "shebangs" (#!).  Currently
+supported language and syntax combinations include:
+
+    C, C++, C#, Java, Rust, D, Javascript, Python, PHP, BASH, Bourne Shell,
+    C Shell, AWK, PowerShell, TCL, Maple, R
+
+Due to the limited ability to recognize programming langauges, some common
+file extensions can lead comments to be mislabelled (for example, .m files
+are currently recognized as Maple instead of the more common Objective-C).
+
+In order to turn off comment recognition, use the command line argument "-c"
+before the appropriate filename.  Turning comments off currently does not
+work for globbed files.
+
+
+STDIN =========================================================================
+
+To type a file from STDIN instead of using a file, use the argument "-s" in
+place of a filename.  Text can then be pasted into the command line in order
+to be used for typing practice.
+
+Currently nctyping does not support piping from the commandline to the program
+using STDIN.
+
 
 INSTALL =======================================================================
 
@@ -15,3 +42,11 @@ In order to build the program you will need to have gcc and ncurses installed.
 On debian/ubuntu systems this can be done with
 
     # apt-get install gcc libncurses5-dev
+
+LICENSE =======================================================================
+
+nctyping is available under the Creative Commons Zero License. Full license
+text is available at:
+
+    https://creativecommons.org/publicdomain/zero/1.0/legalcode
+
