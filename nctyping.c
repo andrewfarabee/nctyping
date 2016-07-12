@@ -476,19 +476,31 @@ int search_save(const char *filename) {
 
 /* saves progress to the file ~/.nctyping-restore in the format
  * "filename" position
+ * TODO: filenames saved are not absolute, so they differ based on the
+ * working directory.  In order to fix this we will either have to only
+ * write the filename after the last '/' or we will have to use the envp
+ * to concatenate the filename with the working directory (while also
+ * considering "." and ".." directories.
  */
-void save_progress(const char *filename, int position) {
+int save_progress(const char *filename, int position) {
     FILE *fd;
-    if (search_save(filename) != -1) {
+    if (search_save(filename) == -1) {
         /* need to add an entry for that filename to the end of the file */
         fd = fopen("~/.nctyping-restore", "a");
+        if (!fd) {
+            return 0;
+        }
         fprintf(fd, "\"%s\" %d", filename, position);
         close(fd);
     } else {
         /* save file already has an entry for that filename */
         fd = fopen("~/.nctyping-restore", "r+");
+        if (!fd) {
+            return 0;
+        }
         close(fd);
     }
+    return 1;
 }
 
 /* displays the results of a section of typing
@@ -504,7 +516,7 @@ void results(struct scoring *score, bool more, int height, int width,
     init_pair(1, COLOR_BLACK, COLOR_CYAN);
     int x;
     int y;
-    char options[] = "[ENTER] Continue   [F5] Save   [ESC] Exit";
+    char options[] = "[ENTER] Continue   [s] Save   [ESC] Exit";
 
     /* clear screen */
     clearscreen(height, width, 0, ACS_PLUS);
@@ -545,17 +557,24 @@ void results(struct scoring *score, bool more, int height, int width,
         printw("Press [ENTER] to Exit");
     }
     move(height - 1, width - 1);
-    attroff(COLOR_PAIR(1));
 
     /* Wait for the user to press ENTER to continue */
     char sub = getch();
     while (sub != '\n') {
-        if (sub == KEY_F(5)) {
-            /* TODO F5 keypress isn't recognized, instead treated as ESC */
-            save_progress(filename, begin);
+        if (sub == 's') {
+            move((height / 2) + 3, (width - strlen(options)) / 2);
+            if (save_progress(filename, begin)) {
+                strncpy(options + strlen("[ENTER] Continue   "), "Saved!!!", 8);
+                printw("%s", options);
+            } else {
+                strncpy(options + strlen("[ENTER] Continue   "), "Failed!!", 8);
+                printw("%s", options);
+            }
+            move(height - 1, width - 1);
         } else if (sub == 27) {
             /* exit on escape, will need a better way to do this since
              * allocated memory needs to be free()d */
+            attroff(COLOR_PAIR(1));
             clearscreen(height, width, 0, ' ');
             endwin();
             exit(1);
@@ -563,6 +582,7 @@ void results(struct scoring *score, bool more, int height, int width,
         sub = getch();
     }
     /* clear screen again */
+    attroff(COLOR_PAIR(1));
     clearscreen(height, width, 0, ' ');
     endwin();
 }
