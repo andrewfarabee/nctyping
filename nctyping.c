@@ -132,29 +132,32 @@ unsigned short int commentType(char *filename, const char *buffer) {
 }
 
 /* toggles flags for comment fields based on interpretation of the file lang */
-void markComments(char *filename, const char *buffer, char *flags, int size) {
+void markComments(char *filename, const char *buffer, char *flags, int size,
+                  bool ignoreComments) {
     unsigned short int syntax = commentType(filename, buffer);
     char* pos;
     int i;
     int comment_len = 0;
     for (i = 0; i < size; i++) {
-        if (syntax & DOUBLESLASHINLINE && !comment_len) {
-            comment_len = commentLength(buffer, &i, "//", "\n");
-        }
-        if (syntax & SINGLEHASHINLINE && !comment_len) {
-            comment_len = commentLength(buffer, &i, "#", "\n");
-        }
-        if (syntax & SLASHSTARBLOCK && !comment_len) {
-            comment_len = commentLength(buffer, &i, "/*", "*/");
-        }
-        if (syntax & ANGLEHASHBLOCK && !comment_len) {
-            comment_len = commentLength(buffer, &i, "<#", "#>");
-        }
-        if (syntax & TRIPLESQUOTEBLOCK && !comment_len) {
-            comment_len = commentLength(buffer, &i, "'''", "'''");
-        }
-        if (syntax & TRIPLEDQUOTEBLOCK && !comment_len) {
-            comment_len = commentLength(buffer, &i, "\"\"\"", "\"\"\"");
+        if (!ignoreComments) {
+            if (syntax & DOUBLESLASHINLINE && !comment_len) {
+                comment_len = commentLength(buffer, &i, "//", "\n");
+            }
+            if (syntax & SINGLEHASHINLINE && !comment_len) {
+                comment_len = commentLength(buffer, &i, "#", "\n");
+            }
+            if (syntax & SLASHSTARBLOCK && !comment_len) {
+                comment_len = commentLength(buffer, &i, "/*", "*/");
+            }
+            if (syntax & ANGLEHASHBLOCK && !comment_len) {
+                comment_len = commentLength(buffer, &i, "<#", "#>");
+            }
+            if (syntax & TRIPLESQUOTEBLOCK && !comment_len) {
+                comment_len = commentLength(buffer, &i, "'''", "'''");
+            }
+            if (syntax & TRIPLEDQUOTEBLOCK && !comment_len) {
+                comment_len = commentLength(buffer, &i, "\"\"\"", "\"\"\"");
+            }
         }
         if (comment_len) {
             flags[i] |= COMMENT;
@@ -520,9 +523,19 @@ void running(int argc, char **argv) {
     char filename[255];
     int size;
     int i = 0;
+    bool ignoreComments = false;
 
     /* this for loop will take us through each file to be typed */
     for (i = 1; i < argc; i++) {
+        /* check if we want to avoid comment syntax recognition */
+        if (!strcmp(argv[i], "-c")) {
+            ignoreComments = true;
+            if (i < argc - 1) {
+                i++;
+            } else {
+                return;
+            }
+        }
         /* check if first arg was '-s' */
         if (!strcmp(argv[i], "-s")) {
             size = file_pop("/dev/stdin", &buffer, &flags);
@@ -532,7 +545,7 @@ void running(int argc, char **argv) {
             strcpy(filename, argv[i]);
         }
 
-        markComments(filename, buffer, flags, size);
+        markComments(filename, buffer, flags, size, ignoreComments);
 
         ioctl(0,TIOCGWINSZ,&w);
         int res = typing(buffer, flags, size, 0, w.ws_row,
@@ -546,6 +559,7 @@ void running(int argc, char **argv) {
         }
         results(&score, i != argc - 1, w.ws_row, w.ws_col);
         free(buffer);
+        ignoreComments = false;
     }
 }
 
