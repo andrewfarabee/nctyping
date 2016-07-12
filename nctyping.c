@@ -452,11 +452,51 @@ int typing(const char *buffer, char *flags, int size, int begin, int height,
     return i;
 }
 
+/* searches the save file ~/.nctyping-restore for an entry for "filename"
+ * and returns the position associated with that entry.
+ */
+int search_save(const char *filename) {
+    FILE *fd;
+    bool found = false;
+    char subfile[300];
+    int position;
+    fd = fopen("~/.nctyping-restore", "r");
+    if (!fd) {
+        return -1;
+    }
+    while (!feof(fd) && !found) {
+        fscanf(fd, "%s", subfile);
+        if (!strncmp(filename, subfile + 1, strlen(subfile) - 2)) {
+            fscanf(fd, "%d", position);
+            return position;
+        }
+    }
+    return -1;
+}
+
+/* saves progress to the file ~/.nctyping-restore in the format
+ * "filename" position
+ */
+void save_progress(const char *filename, int position) {
+    FILE *fd;
+    if (search_save(filename) != -1) {
+        /* need to add an entry for that filename to the end of the file */
+        fd = fopen("~/.nctyping-restore", "a");
+        fprintf(fd, "\"%s\" %d", filename, position);
+        close(fd);
+    } else {
+        /* save file already has an entry for that filename */
+        fd = fopen("~/.nctyping-restore", "r+");
+        close(fd);
+    }
+}
+
 /* displays the results of a section of typing
  * this is usually the results of a screen of text
  * but may also be triggered by user pressing ESCAPE as a sort of PAUSE
  */
-void results(struct scoring *score, bool more, int height, int width) {
+void results(struct scoring *score, bool more, int height, int width,
+             const char *filename, int begin) {
     initscr();
     cbreak();
     noecho();
@@ -464,6 +504,7 @@ void results(struct scoring *score, bool more, int height, int width) {
     init_pair(1, COLOR_BLACK, COLOR_CYAN);
     int x;
     int y;
+    char options[] = "[ENTER] Continue   [F5] Save   [ESC] Exit";
 
     /* clear screen */
     clearscreen(height, width, 0, ACS_PLUS);
@@ -471,19 +512,19 @@ void results(struct scoring *score, bool more, int height, int width) {
     /* print box */
     y = (height / 2) - 5;
     attron(COLOR_PAIR(1));
-    for (x = (width / 2) - 20; x < (width / 2) + 20; x++) {
+    for (x = (width / 2) - 30; x < (width / 2) + 30; x++) {
         mvaddch(y, x, ACS_CKBOARD);
     }
     for (y = (height / 2) - 4; y <= (height / 2) + 4; y++) {
-        for (x = (width / 2) - 20; x < (width / 2) + 20; x++) {
-            if (x < (width / 2) - 18 || x > (width / 2) + 17) {
+        for (x = (width / 2) - 30; x < (width / 2) + 30; x++) {
+            if (x < (width / 2) - 28 || x > (width / 2) + 27) {
                 mvaddch(y, x, ACS_CKBOARD);
             } else {
                 mvaddch(y, x, ' ');
             }
         }
     }
-    for (x = (width / 2) - 20; x < (width / 2) + 20; x++) {
+    for (x = (width / 2) - 30; x < (width / 2) + 30; x++) {
         mvaddch(y, x, ACS_CKBOARD);
     }
 
@@ -496,18 +537,29 @@ void results(struct scoring *score, bool more, int height, int width) {
            ((double) score->right / (double)(score->right + score->wrong)) * 100);
     move((height / 2) + 1, (width / 2) - 13);
     printw("Total Keystrokes:  %6d", score->right + score->wrong);
-    move((height / 2) + 3, (width / 2) - 13);
     if (more) {
-        printw("To Continue, Press [ENTER]");
+        move((height / 2) + 3, (width - strlen(options)) / 2);
+        printw("%s", options);
     } else {
-        printw("   Press [ENTER] to Exit");
+        move((height / 2) + 3, (width - strlen("Press [ENTER] to Exit")) / 2);
+        printw("Press [ENTER] to Exit");
     }
     move(height - 1, width - 1);
     attroff(COLOR_PAIR(1));
 
-    /* Wait for the user to press ENTER */
+    /* Wait for the user to press ENTER to continue */
     char sub = getch();
     while (sub != '\n') {
+        if (sub == KEY_F(5)) {
+            /* TODO F5 keypress isn't recognized, instead treated as ESC */
+            save_progress(filename, begin);
+        } else if (sub == 27) {
+            /* exit on escape, will need a better way to do this since
+             * allocated memory needs to be free()d */
+            clearscreen(height, width, 0, ' ');
+            endwin();
+            exit(1);
+        }
         sub = getch();
     }
     /* clear screen again */
@@ -552,12 +604,14 @@ void running(int argc, char **argv) {
                          w.ws_col > 255 ? 256 : w.ws_col, filename, &score);
         while (res < size - 1) {
             ioctl(0,TIOCGWINSZ,&w);
-            results(&score, true, w.ws_row, w.ws_col);
+            results(&score, true, w.ws_row, w.ws_col > 255 ? 256 : w.ws_col,
+                    filename, res);
             ioctl(0,TIOCGWINSZ,&w);
             res = typing(buffer, flags, size, res, w.ws_row,
                          w.ws_col > 255 ? 256 : w.ws_col, filename, &score);
         }
-        results(&score, i != argc - 1, w.ws_row, w.ws_col);
+        results(&score, i < argc - 1, w.ws_row, w.ws_col > 255 ? 256 : w.ws_col,
+                filename, res);
         free(buffer);
         ignoreComments = false;
     }
