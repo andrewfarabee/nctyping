@@ -79,10 +79,9 @@ int commentLength(const char *buffer, int *i, const char *open,
 
 /* estimates the comment syntax for a file based on filename and contents */
 unsigned short int commentType(char *filename, const char *buffer) {
-    char *ext = filename + strlen(filename) - 1;
     unsigned short int syntax = 0;
 
-    while (ext > filename && *ext != '/') ext--;
+    char *ext = filename;
     while (*ext != '.' && *ext) ext++;
 
     if (*ext == '.') ext++;
@@ -452,52 +451,66 @@ int typing(const char *buffer, char *flags, int size, int begin, int height,
     return i;
 }
 
-/* searches the save file ~/.nctyping-restore for an entry for "filename"
- * and returns the position associated with that entry.
- */
-int search_save(const char *filename) {
+/* updates the number associated with a filename in the save file */
+int update_save(const char *filename, int newpos, const char *savepath) {
     FILE *fd;
-    bool found = false;
-    char subfile[300];
-    int position;
-    fd = fopen("~/.nctyping-restore", "r");
+    char subfile[255];
+    fd = fopen(savepath, "r+");
     if (!fd) {
         return -1;
     }
-    while (!feof(fd) && !found) {
+    while (!feof(fd)) {
         fscanf(fd, "%s", subfile);
-        if (!strncmp(filename, subfile + 1, strlen(subfile) - 2)) {
-            fscanf(fd, "%d", position);
-            return position;
+        if (!strncmp(filename, subfile + 1, strlen(filename))) {
+            fprintf(fd, " %d\n", newpos);
+            fflush(fd);
+            close(fd);
+            return 1;
         }
     }
+    close(fd);
+    return -1;
+}
+
+/* searches the save file ~/.nctyping-restore for an entry for "filename"
+ * and returns the position associated with that entry.
+ */
+int search_save(const char *filename, const char *savepath) {
+    FILE *fd;
+    char subfile[255];
+    char position[16];
+    fd = fopen(savepath, "r");
+    if (!fd) {
+        return -1;
+    }
+    while (!feof(fd)) {
+        fscanf(fd, "%s", subfile);
+        fscanf(fd, "%s", position);
+        if (!strncmp(filename, subfile + 1, strlen(filename))) {
+            close(fd);
+            return atoi(position);
+        }
+    }
+    close(fd);
     return -1;
 }
 
 /* saves progress to the file ~/.nctyping-restore in the format
  * "filename" position
- * TODO: filenames saved are not absolute, so they differ based on the
- * working directory.  In order to fix this we will either have to only
- * write the filename after the last '/' or we will have to use the envp
- * to concatenate the filename with the working directory (while also
- * considering "." and ".." directories.
+ * Currently filenames are local to the directory they are in, meaning
+ * that files with the same name in different directories will be loaded
+ * at different positions in the save file.
  */
-int save_progress(const char *filename, int position) {
+int save_progress(const char *filename, int position, const char *savepath) {
     FILE *fd;
-    if (search_save(filename) == -1) {
+    if (update_save(filename, position, savepath) == -1) {
         /* need to add an entry for that filename to the end of the file */
-        fd = fopen("~/.nctyping-restore", "a");
+        fd = fopen(savepath, "a");
         if (!fd) {
             return 0;
         }
-        fprintf(fd, "\"%s\" %d", filename, position);
-        close(fd);
-    } else {
-        /* save file already has an entry for that filename */
-        fd = fopen("~/.nctyping-restore", "r+");
-        if (!fd) {
-            return 0;
-        }
+        fprintf(fd, "\"%s\" %d\n", filename, position);
+        fflush(fd);
         close(fd);
     }
     return 1;
@@ -508,7 +521,7 @@ int save_progress(const char *filename, int position) {
  * but may also be triggered by user pressing ESCAPE as a sort of PAUSE
  */
 void results(struct scoring *score, bool more, int height, int width,
-             const char *filename, int begin) {
+             const char *filename, int begin, const char *savepath) {
     initscr();
     cbreak();
     noecho();
@@ -561,9 +574,10 @@ void results(struct scoring *score, bool more, int height, int width,
     /* Wait for the user to press ENTER to continue */
     char sub = getch();
     while (sub != '\n') {
+        /* User is trying to save */
         if (sub == 's') {
             move((height / 2) + 3, (width - strlen(options)) / 2);
-            if (save_progress(filename, begin)) {
+            if (save_progress(filename, begin, savepath)) {
                 strncpy(options + strlen("[ENTER] Continue   "), "Saved!!!", 8);
                 printw("%s", options);
             } else {
@@ -588,14 +602,31 @@ void results(struct scoring *score, bool more, int height, int width,
 }
 
 /* Just a wrapper function for handling splitting the buffer up into screens */
-void running(int argc, char **argv) {
+void running(int argc, char **argv, char **envp) {
     struct winsize w;
     struct scoring score;
     char *buffer, *flags;
     char filename[255];
-    int size;
+    char savepath[255];
+    int size, res;
     int i = 0;
     bool ignoreComments = false;
+
+    /* this loop finds the HOME option in **envp to create the save path */
+    memset(savepath, 0, 255);
+    while (*envp && savepath[0] == 0) {
+        if (!strncmp("HOME=/", *envp, 6)) {
+            savepath[0] = '/';
+            strncpy(savepath + 1, *envp + 6, 255);
+            strcpy(savepath + strlen(savepath), "/.nctyping-restore");
+        }
+        envp++;
+    }
+    /* if we can't create a save path, try /dev/null */
+    if (savepath[0] == 0) {
+        perror("envp HOME entry missing, saving not possible");
+        strcpy(savepath, "/dev/null");
+    }
 
     /* this for loop will take us through each file to be typed */
     for (i = 1; i < argc; i++) {
@@ -614,24 +645,32 @@ void running(int argc, char **argv) {
             strcpy(filename, "stdin");
         } else {
             size = file_pop(argv[i], &buffer, &flags);
-            strcpy(filename, argv[i]);
+            if (strrchr(argv[i], '/')) {
+                strcpy(filename, strrchr(argv[i], '/') + 1);
+            } else {
+                strcpy(filename, argv[i]);
+            }
         }
+
+        /* Search for start position from save file */
+        res = search_save(filename, savepath);
+        if (res == -1) res = 0;
 
         markComments(filename, buffer, flags, size, ignoreComments);
 
         ioctl(0,TIOCGWINSZ,&w);
-        int res = typing(buffer, flags, size, 0, w.ws_row,
+        res = typing(buffer, flags, size, res, w.ws_row,
                          w.ws_col > 255 ? 256 : w.ws_col, filename, &score);
         while (res < size - 1) {
             ioctl(0,TIOCGWINSZ,&w);
             results(&score, true, w.ws_row, w.ws_col > 255 ? 256 : w.ws_col,
-                    filename, res);
+                    filename, res, savepath);
             ioctl(0,TIOCGWINSZ,&w);
             res = typing(buffer, flags, size, res, w.ws_row,
                          w.ws_col > 255 ? 256 : w.ws_col, filename, &score);
         }
         results(&score, i < argc - 1, w.ws_row, w.ws_col > 255 ? 256 : w.ws_col,
-                filename, res);
+                filename, res, savepath);
         free(buffer);
         ignoreComments = false;
     }
@@ -644,7 +683,7 @@ int main(int argc, char **argv, char **envp) {
         printf("Usage: %s [-s] [filename] ... [filename]\n", argv[0]);
         return 0;
     }
-    running(argc, argv);
+    running(argc, argv, envp);
 
     return 0;
 }
