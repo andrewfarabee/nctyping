@@ -454,7 +454,7 @@ int typing(const char *buffer, char *flags, int size, int begin, int height,
 /* updates the number associated with a filename in the save file */
 int update_save(const char *filename, int newpos, const char *savepath) {
     FILE *fd;
-    char subfile[255];
+    char subfile[256];
     fd = fopen(savepath, "r+");
     if (!fd) {
         return -1;
@@ -477,7 +477,7 @@ int update_save(const char *filename, int newpos, const char *savepath) {
  */
 int search_save(const char *filename, const char *savepath) {
     FILE *fd;
-    char subfile[255];
+    char subfile[256];
     char position[16];
     fd = fopen(savepath, "r");
     if (!fd) {
@@ -601,33 +601,67 @@ void results(struct scoring *score, bool more, int height, int width,
     endwin();
 }
 
+/* creates an absolute and unique filepath based on filename and working dir
+ * file: envp entry for working directory (PWD) + filename, result stored here
+ */
+void simplify_filename(char *file) {
+    char *j, *k;
+
+    j = file; /* j keeps track of reading (forward) */
+    k = file; /* k keeps track of writing (backward) */
+    while (*j) {
+        /* pre and post condition:
+         * *j == '/' && *k == '/'
+         * j's '/' is not written to k at the end of loop */
+        if (!strncmp(j, "/../", 4)) {
+            j += 3;
+            if (k > file) k--;
+            while (*k != '/') k--;
+        } else if (!strncmp(j, "/./", 3)) {
+            j += 2;
+        } else if (!strncmp(j, "//", 2)) {
+            j += 1;
+        } else {
+            do {
+                *k = *j;
+                k++; j++;
+            } while (*j != '/' && *j);
+        }
+    }
+    *k = '\0';
+}
+
 /* Just a wrapper function for handling splitting the buffer up into screens */
 void running(int argc, char **argv, char **envp) {
     struct winsize w;
     struct scoring score;
-    char *buffer, *flags;
-    char filename[255];
-    char savepath[255];
+    char *buffer, *flags, *filename, *savepath;
     int size, res;
+    int pwd = -1;
     int i = 0;
     bool ignoreComments = false;
 
-    /* this loop finds the HOME option in **envp to create the save path */
-    memset(savepath, 0, 255);
-    while (*envp && savepath[0] == 0) {
-        if (!strncmp("HOME=/", *envp, 6)) {
-            savepath[0] = '/';
-            strncpy(savepath + 1, *envp + 6, 255);
+    /* this loop finds the HOME option in **envp to find paths */
+    while (envp[i] && (savepath[0] == 0 || pwd == -1)) {
+        /* find absolute path for filename based on pwd */
+        if (!strncmp("PWD=", envp[i], 4)) {
+            pwd = i;
+        /* use the home directory to find where to create a save file */
+        } else if (!strncmp("HOME=", envp[i], 5)) {
+            savepath = malloc(strlen(envp[i]) + strlen("/.nctyping-restore"));
+            strcpy(savepath, envp[i] + 5);
             strcpy(savepath + strlen(savepath), "/.nctyping-restore");
         }
-        envp++;
+        i++;
     }
     /* if we can't create a save path, try /dev/null */
-    if (savepath[0] == 0) {
+    if (!savepath) {
         perror("envp HOME entry missing, saving not possible");
+        savepath = malloc(strlen("/dev/null"));
         strcpy(savepath, "/dev/null");
     }
 
+    i = 0;
     /* this for loop will take us through each file to be typed */
     for (i = 1; i < argc; i++) {
         /* check if we want to avoid comment syntax recognition */
@@ -642,14 +676,22 @@ void running(int argc, char **argv, char **envp) {
         /* check if first arg was '-s' */
         if (!strcmp(argv[i], "-s")) {
             size = file_pop("/dev/stdin", &buffer, &flags);
-            strcpy(filename, "stdin");
+            filename = malloc(strlen("/dev/stdin"));
+            strcpy(filename, "/dev/stdin");
         } else {
             size = file_pop(argv[i], &buffer, &flags);
-            if (strrchr(argv[i], '/')) {
-                strcpy(filename, strrchr(argv[i], '/') + 1);
-            } else {
+            /* if PWD was used in filename, append filename to the end.
+             * assume PWD didn't have any /../ or /./ entries */
+            if (pwd == -1 || argv[i][0] == '/') {
+                filename = malloc(strlen(argv[i]) + 1);
                 strcpy(filename, argv[i]);
+            } else {
+                filename = malloc(strlen(envp[pwd]) + strlen(argv[i]) - 2);
+                strcpy(filename, envp[pwd] + 4);
+                strcat(filename, "/");
+                strcat(filename, argv[i]);
             }
+            simplify_filename(filename);
         }
 
         /* Search for start position from save file */
@@ -672,8 +714,10 @@ void running(int argc, char **argv, char **envp) {
         results(&score, i < argc - 1, w.ws_row, w.ws_col > 255 ? 256 : w.ws_col,
                 filename, res, savepath);
         free(buffer);
+        free(filename);
         ignoreComments = false;
     }
+    free(savepath);
 }
 
 /* Don't really need envp at the moment, but hopefully in the future I
