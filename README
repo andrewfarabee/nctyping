@@ -1,5 +1,31 @@
 nctyping -- light CLI for practicing typing
 
+
+INSTALL =======================================================================
+
+From the nctyping directory, nctyping can be installed by running:
+
+    $ gcc -o nctyping nctyping.c -lncurses
+
+and optionally:
+
+    # mv nctyping /usr/bin
+
+In order to build the program you will need to have gcc and ncurses installed.
+On debian/ubuntu systems this can be done with
+
+    # apt-get install gcc libncurses5-dev
+
+
+SAVING ========================================================================
+
+If you pause anytime during a typing session (by pressing ESCAPE) or if you
+finish a typing session, you will be given the option to save your progress by
+pressing the 's' key on the results screen.  This generates a single save file
+at $HOME/.nctyping-restore.  Each time you start nctyping, your previous save
+position is loaded from the save file for whichever file you are working on.
+
+
 COMMENTS ======================================================================
 
 nctyping recognizes and skips over comments in source code.  Recognition is
@@ -27,21 +53,6 @@ to be used for typing practice.
 Currently nctyping does not support piping from the commandline to the program
 using STDIN.
 
-
-INSTALL =======================================================================
-
-From the nctyping directory, nctyping can be installed by running:
-
-    $ gcc -o nctyping nctyping.c -lncurses
-
-and optionally:
-
-    # mv nctyping /usr/bin
-
-In order to build the program you will need to have gcc and ncurses installed.
-On debian/ubuntu systems this can be done with
-
-    # apt-get install gcc libncurses5-dev
 
 LICENSE =======================================================================
 
