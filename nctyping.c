@@ -263,8 +263,15 @@ int typing(const char *buffer, char *flags, int size, int begin, int height,
     /* start: time first key is typed, last: time of last correct keystroke */
     time_t start, last;
     bool isStarted = false;
-    char *xs = malloc(size);
-    memset(xs, 0, size);
+    char *xs;
+
+    if (height * width < size - begin) {
+        xs = malloc(height * width);
+        memset(xs, 0, height * width);
+    } else {
+        xs = malloc(size - begin);
+        memset(xs, 0, size - begin);
+    }
 
     /* x, y mark the user cursor
      * xt, is for secondary drawing when x, y can't move
@@ -304,7 +311,7 @@ int typing(const char *buffer, char *flags, int size, int begin, int height,
         if (i == begin && flags[i] & COMMENT) {
             begin++;
         }
-        xs[i] = x;
+        xs[i - screen_start] = x;
         if (flags[i] & COMMENT) {
             attroff(COLOR_PAIR(1));
             attron(COLOR_PAIR(8));
@@ -345,8 +352,8 @@ int typing(const char *buffer, char *flags, int size, int begin, int height,
         /* Skip over comments and whitespace */
         while (flags[i] & COMMENT) {
             i++;
-            if (xs[i] <= xs[i-1]) y++;
-            x = xs[i];
+            if (xs[i - screen_start] <= xs[(i - screen_start) - 1]) y++;
+            x = xs[i - screen_start];
         }
         /* draw typing cursor */
         if (!streak && !(flags[i] & COMMENT)) {
@@ -379,15 +386,15 @@ int typing(const char *buffer, char *flags, int size, int begin, int height,
                 }
 
                 /* Move x and y, counting for newline */
-                if (xs[i-1] >= xs[i]) y--;
-                x = xs[i-1];
+                if (xs[(i - screen_start) - 1] >= xs[i - screen_start]) y--;
+                x = xs[(i - screen_start) - 1];
 
                 i--;
 
                 /* Skip over comments */
                 while (flags[i] & COMMENT) {
-                    if (xs[i-1] >= xs[i]) y--;
-                    x = xs[i-1];
+                    if (xs[(i - screen_start) - 1] >= xs[i - screen_start]) y--;
+                    x = xs[(i - screen_start) - 1];
                     i--;
                 }
                 if (streak) {
@@ -418,10 +425,10 @@ int typing(const char *buffer, char *flags, int size, int begin, int height,
                 attroff(COLOR_PAIR(3));
             }
             i++;
-            if (xs[i] <= xs[i-1]) {
+            if (xs[i - screen_start] <= xs[(i - screen_start) - 1]) {
                 y++;
             }
-            x = xs[i];
+            x = xs[i - screen_start];
         } else {
             /* here we aren't allowing users to finish with a streak of errors
              * so lets redraw the bottom border in red to alert them */
