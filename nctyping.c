@@ -121,6 +121,9 @@ unsigned short int commentType(char *filename, const char *buffer) {
                !strncmp(buffer, "#!/usr/bin/Rscript",
                         strlen("#!/usr/bin/Rscript"))) {
         syntax = SINGLEHASHINLINE | ANGLEHASHBLOCK;
+    } else if (!strncmp(buffer, "%PDF-", strlen("%PDF-"))) {
+        fprintf(stderr, "nctyping currently does not support pdf-to-text\n");
+        exit(-1);
     } else {
         syntax = 0;
     }
@@ -671,7 +674,7 @@ void running(int argc, char **argv, char **envp) {
     }
     /* if we can't create a save path, try /dev/null */
     if (!savepath) {
-        perror("envp HOME entry missing, saving not possible");
+        fprintf(stderr, "envp HOME entry missing, saving not possible\n");
         savepath = malloc(strlen("/dev/null"));
         strcpy(savepath, "/dev/null");
     }
