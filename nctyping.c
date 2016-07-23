@@ -1,20 +1,17 @@
-/**NCTYPING**********************************************
+ /*NCTYPING**********************************************
  * Ncurses program for typing along with files.         *
  * written by: Andrew Farabee (pasca1)                  *
  *             me@andrewfarabee.com                     *
  *                                                      *
  * INSTALL using "gcc -o nctyping nctyping.c -lncurses" *
  *                                                      *
- * ISSUES: no scrolling down page                       *
- *         stdin not working from pipe                  *
+ * ISSUES: stdin not working from pipe                  *
  *         time() is nonmonotonic and inaccurate        *
- *         bug when character 80 is a newline           *
- *         tab characters are being treated as spaces   *
  *         wrapped lines are displayed and stored wrong *
+ *         bug when character @ width is a newline      *
+ *         tab characters are being treated as spaces   *
  *         no newline if inline co follows typed text   *
- *         extra typable char when scrn ends in comment *
- ********************************************************
- */
+ *******************************************************/
 
 #include <ncurses.h>
 #include <sys/ioctl.h>
@@ -738,8 +735,6 @@ void running(int argc, char **argv, char **envp) {
     free(savepath);
 }
 
-/* Don't really need envp at the moment, but hopefully in the future I
- * can use it to find default files for when the user doesn't specify one */
 int main(int argc, char **argv, char **envp) {
     if (argc < 2) {
         printf("Usage: %s [-s] [filename] ... [filename]\n", argv[0]);
