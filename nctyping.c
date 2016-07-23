@@ -354,7 +354,18 @@ int typing(const char *buffer, char *flags, int size, int begin, int height,
             i++;
             if (xs[i - screen_start] <= xs[(i - screen_start) - 1]) y++;
             x = xs[i - screen_start];
+
+            /* handle issue with trailing typeable space after comments */
+            if (!(i < used || streak)) {
+                free(xs);
+                endwin();
+                score->right = right;
+                score->wrong = wrong;
+                score->time = time(NULL) - start;
+                return i;
+            }
         }
+
         /* draw typing cursor */
         if (!streak && !(flags[i] & COMMENT)) {
             attron(COLOR_PAIR(flags[i] & NEWLINE ? 7 : 2));
