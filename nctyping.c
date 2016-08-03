@@ -386,6 +386,11 @@ int typing(const char *buffer, char *flags, int size, int begin, int height,
         /* GET USER INPUT */
         sub = getch();
 
+        /* if the user types a tab treat it as a space since tabs are
+         * represented as 4 spaces, multiple spaces are treated as comments,
+         * and a single space key is enough to traverse the entire comment. */
+        if (sub == '\t') sub = ' ';
+
         /* If user pressed ESCAPE, we collect results for results() */
         if (sub == 27) break;
         if (!isStarted) {
