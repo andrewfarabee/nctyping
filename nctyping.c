@@ -202,7 +202,7 @@ int file_pop(char *filename, char **buffer, char **flags) {
     FILE *fd;
     int i = 0;
     char sub;
-    int size;
+    int size, j;
     fd = fopen(filename, "r");
     if (fd == NULL) {
         perror("Error opening file");
@@ -213,6 +213,13 @@ int file_pop(char *filename, char **buffer, char **flags) {
     if (strcmp(filename, "/dev/stdin")) {
         fseek(fd, 0L, SEEK_END);
         size = ftell(fd);
+        fseek(fd, 0L, SEEK_SET);
+
+        /* need to count tabs in order to account for them in size of buffer */
+        while (!feof(fd)) {
+            if (fgetc(fd) == '\t')
+                size += 3;
+        }
         fseek(fd, 0L, SEEK_SET);
     } else {
     /* need a constant size for a stdin buffer because fseek isn't possible */
@@ -234,10 +241,12 @@ int file_pop(char *filename, char **buffer, char **flags) {
             if (sub == '\n') (*flags)[i] |= NEWLINE;
             (*buffer)[i] = sub;
             i++;
-        /* tabs are treated as spaces for simplicity */
+        /* tabs are treated as 4 spaces */
         } else if (sub == '\t') {
-            (*buffer)[i] = ' ';
-            i++;
+            for (j = 0; j < 3 && i < size; j++) {
+                (*buffer)[i] = ' ';
+                i++;
+            }
         }
     }
     if (fclose(fd) == EOF) {
