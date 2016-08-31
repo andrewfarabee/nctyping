@@ -6,10 +6,9 @@
  * INSTALL using "gcc -o nctyping nctyping.c -lncurses" *
  *                                                      *
  * ISSUES: stdin not working from pipe                  *
- *         time() is nonmonotonic and inaccurate        *
+ *         time() is still nonmonotonic but used less   *
  *         wrapped lines are displayed and stored wrong *
  *         bug when character @ width is a newline      *
- *         tab characters are being treated as spaces   *
  *         no newline if inline co follows typed text   *
  *******************************************************/
 
@@ -187,10 +186,12 @@ void clearscreen(int height, int width, int current_color, int filler) {
 }
 
 /* returns color pair for typed chars based on the time it took to type them */
-int colortiming(int diff) {
-    if (diff > 2) {
+int colortiming(int flag) {
+    if (flag & MISTAKE1 && flag & MISTAKE2) {
+        return 7;
+    } else if (flag & MISTAKE2) {
         return 6;
-    } else if (diff > 1) {
+    } else if (flag & MISTAKE1) {
         return 5;
     } else {
         return 4;
@@ -269,8 +270,8 @@ int file_pop(char *filename, char **buffer, char **flags) {
  */
 int typing(const char *buffer, char *flags, int size, int begin, int height,
            int width, char* filename, struct scoring *score) {
-    /* start: time first key is typed, last: time of last correct keystroke */
-    time_t start, last;
+    /* start: time first key is typed */
+    time_t start;
     bool isStarted = false;
     char *xs;
 
@@ -303,11 +304,12 @@ int typing(const char *buffer, char *flags, int size, int begin, int height,
     init_pair(1, COLOR_WHITE, COLOR_BLACK);    /* to be typed */
     init_pair(2, COLOR_BLACK, COLOR_MAGENTA);  /* typing cursor */
     init_pair(3, COLOR_BLACK, COLOR_RED);      /* mistake hilight */
-    init_pair(4, COLOR_CYAN, COLOR_BLACK);     /* fast match */
-    init_pair(5, COLOR_GREEN, COLOR_BLACK);    /* medium match */
-    init_pair(6, COLOR_YELLOW, COLOR_BLACK);   /* slow match */
-    init_pair(7, COLOR_BLACK, COLOR_WHITE);    /* newline char */
-    init_pair(8, COLOR_BLUE, COLOR_BLACK);     /* commmented code */
+    init_pair(4, COLOR_CYAN, COLOR_BLACK);     /* 0 mistake match */
+    init_pair(5, COLOR_GREEN, COLOR_BLACK);    /* 1 mistake match */
+    init_pair(6, COLOR_YELLOW, COLOR_BLACK);   /* 2 mistake match */
+    init_pair(7, COLOR_RED, COLOR_BLACK);      /* 3 mistake match */
+    init_pair(8, COLOR_BLACK, COLOR_WHITE);    /* newline char */
+    init_pair(9, COLOR_BLUE, COLOR_BLACK);     /* commmented code */
 
     x = 1;
     y = 0;
@@ -323,7 +325,7 @@ int typing(const char *buffer, char *flags, int size, int begin, int height,
         xs[i - screen_start] = x;
         if (flags[i] & COMMENT) {
             attroff(COLOR_PAIR(1));
-            attron(COLOR_PAIR(8));
+            attron(COLOR_PAIR(9));
         }
         if (buffer[i] == '\n' || x >= width) {
             x = 1;
@@ -334,7 +336,7 @@ int typing(const char *buffer, char *flags, int size, int begin, int height,
             x++;
         }
         if (flags[i] & COMMENT) {
-            attroff(COLOR_PAIR(8));
+            attroff(COLOR_PAIR(9));
             attron(COLOR_PAIR(1));
         }
         i++;
@@ -377,9 +379,9 @@ int typing(const char *buffer, char *flags, int size, int begin, int height,
 
         /* draw typing cursor */
         if (!streak && !(flags[i] & COMMENT)) {
-            attron(COLOR_PAIR(flags[i] & NEWLINE ? 7 : 2));
+            attron(COLOR_PAIR(flags[i] & NEWLINE ? 8 : 2));
             mvaddch(y, x, flags[i] & NEWLINE ? 182 | A_ALTCHARSET : buffer[i]);
-            attroff(COLOR_PAIR(flags[i] & NEWLINE ? 7 : 2));
+            attroff(COLOR_PAIR(flags[i] & NEWLINE ? 8 : 2));
             move(height - 1, width - 1);
         }
 
@@ -396,7 +398,6 @@ int typing(const char *buffer, char *flags, int size, int begin, int height,
         if (!isStarted) {
             isStarted = true;
             start = time(NULL);
-            last = time(NULL);
         }
         /* handle backspace */
         if (sub == 127) {
@@ -434,12 +435,15 @@ int typing(const char *buffer, char *flags, int size, int begin, int height,
             /* correct keystroke */
             if (sub == buffer[i] && streak == 0) {
                 right++;
-                attron(COLOR_PAIR(colortiming(time(NULL) - last)));
+                attron(COLOR_PAIR(colortiming(flags[i])));
                 mvaddch(y, x, buffer[i]);
-                attroff(COLOR_PAIR(colortiming(time(NULL) - last)));
-                last = time(NULL);
+                attroff(COLOR_PAIR(colortiming(flags[i])));
             /* wrong keystroke */
             } else {
+                /* Mark errors using combinations of 2-bits of mistake flags */
+                if (!(streak || (flags[i] & MISTAKE1 && flags[i] & MISTAKE2))) {
+                    flags[i] += MISTAKE1;
+                }
                 streak++;
                 wrong++;
                 attron(COLOR_PAIR(3));
