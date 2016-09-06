@@ -303,13 +303,13 @@ int typing(const char *buffer, char *flags, int size, int begin, int height,
     start_color();
     init_pair(1, COLOR_WHITE, COLOR_BLACK);    /* to be typed */
     init_pair(2, COLOR_BLACK, COLOR_MAGENTA);  /* typing cursor */
-    init_pair(3, COLOR_BLACK, COLOR_RED);      /* mistake hilight */
+    init_pair(3, COLOR_BLACK, COLOR_RED);      /* mistake highlight */
     init_pair(4, COLOR_CYAN, COLOR_BLACK);     /* 0 mistake match */
     init_pair(5, COLOR_GREEN, COLOR_BLACK);    /* 1 mistake match */
     init_pair(6, COLOR_YELLOW, COLOR_BLACK);   /* 2 mistake match */
     init_pair(7, COLOR_RED, COLOR_BLACK);      /* 3 mistake match */
     init_pair(8, COLOR_BLACK, COLOR_WHITE);    /* newline char */
-    init_pair(9, COLOR_BLUE, COLOR_BLACK);     /* commmented code */
+    init_pair(9, COLOR_BLUE, COLOR_BLACK);     /* commented code */
 
     x = 1;
     y = 0;
@@ -460,7 +460,7 @@ int typing(const char *buffer, char *flags, int size, int begin, int height,
             x = xs[i - screen_start];
         } else {
             /* here we aren't allowing users to finish with a streak of errors
-             * so lets redraw the bottom border in red to alert them */
+             * so let's redraw the bottom border in red to alert them */
             attron(COLOR_PAIR(3));
             for (xt = 0; xt < width; xt++) {
                 mvaddch(height - 2, xt, ACS_CKBOARD);
